@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SLIME FLOW // LIVE GPU</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #020A05;
+  color: #00FF88;
+  font-family: 'Consolas', 'Courier New', monospace;
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── TOP BAR ── */
+#topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 44px;
+  background: #020A05;
+  border-bottom: 1px solid #003322;
+  flex-shrink: 0;
+}
+#topbar .title {
+  font-size: 15px;
+  font-weight: bold;
+  letter-spacing: 4px;
+  color: #00FF88;
+}
+#topbar .title span { color: #CC00FF; }
+#status-badge {
+  font-size: 10px;
+  letter-spacing: 2px;
+  padding: 3px 10px;
+  border-radius: 2px;
+  border: 1px solid #003322;
+  color: #447755;
+}
+#status-badge.live { border-color: #00FF88; color: #00FF88; }
+#status-badge.error { border-color: #FF3333; color: #FF3333; }
+#fps-display { font-size: 11px; color: #447755; letter-spacing: 1px; }
+
+/* ── MAIN LAYOUT ── */
+#main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── LEFT PANEL ── */
+#left-panel {
+  width: 200px;
+  flex-shrink: 0;
+  background: #040F07;
+  border-right: 1px solid #003322;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+.panel-title {
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: #007744;
+  border-bottom: 1px solid #003322;
+  padding-bottom: 5px;
+}
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+}
+.metric-label { color: #447755; }
+.metric-val { color: #00FF88; font-weight: bold; }
+.metric-val.warn { color: #FFDD00; }
+.metric-val.danger { color: #FF3333; }
+.metric-val.magenta { color: #CC00FF; }
+
+.bar-wrap { margin-top: 3px; }
+.bar-bg { width: 100%; height: 5px; background: #071A0C; border-radius: 2px; }
+.bar-fill { height: 5px; border-radius: 2px; transition: width 0.2s; }
+
+/* agent type legend */
+.agent-type {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #C8E8D0;
+  margin-top: 3px;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* controls */
+button {
+  background: #071A0C;
+  border: 1px solid #007744;
+  color: #00FF88;
+  font-family: 'Consolas', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 6px 8px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.1s, border-color 0.1s;
+}
+button:hover { background: #0A2A14; border-color: #00FF88; }
+button.danger { border-color: #FF3333; color: #FF3333; }
+button.danger:hover { background: #2A0A0A; }
+button.magenta { border-color: #CC00FF; color: #CC00FF; }
+button.magenta:hover { background: #180030; }
+button.active { background: #003322; border-color: #00FF88; }
+
+/* ── CANVAS AREA ── */
+#canvas-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+#overlay-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+#click-hint {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: #003322;
+  letter-spacing: 2px;
+  pointer-events: none;
+}
+
+/* ── RIGHT PANEL ── */
+#right-panel {
+  width: 220px;
+  flex-shrink: 0;
+  background: #040F07;
+  border-left: 1px solid #003322;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+/* veil eye */
+#veil-eye {
+  text-align: center;
+  padding: 10px 0;
+}
+#veil-iris {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: 2px solid #CC00FF;
+  margin: 0 auto 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  transition: box-shadow 0.3s;
+}
+#veil-iris.active {
+  box-shadow: 0 0 20px #CC00FF88, 0 0 40px #CC00FF44;
+  animation: pulse-eye 2s infinite;
+}
+#veil-iris.inactive { border-color: #333; opacity: 0.4; }
+@keyframes pulse-eye {
+  0%,100% { box-shadow: 0 0 15px #CC00FF88; }
+  50%      { box-shadow: 0 0 35px #CC00FFcc; }
+}
+#veil-label {
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: #CC00FF;
+}
+#veil-label.inactive { color: #333; }
+
+/* anomaly bar */
+#anomaly-bar-fill {
+  background: linear-gradient(90deg, #007744, #FFDD00, #FF3333);
+  transition: width 0.3s;
+}
+
+/* event log */
+#event-log {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 9px;
+  line-height: 1.6;
+  min-height: 80px;
+  max-height: 200px;
+}
+.log-entry { padding: 1px 0; }
+.log-entry.flow    { color: #447755; }
+.log-entry.rogue   { color: #CC00FF; }
+.log-entry.fault   { color: #FF3333; }
+.log-entry.quarant { color: #FFDD00; }
+.log-entry.system  { color: #00CCFF; }
+
+/* connection error overlay */
+#conn-error {
+  position: fixed;
+  inset: 0;
+  background: #020A05ee;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 100;
+}
+#conn-error h2 { color: #FF3333; font-size: 18px; letter-spacing: 3px; }
+#conn-error p  { color: #C8E8D0; font-size: 12px; text-align: center; line-height: 1.8; }
+#conn-error code { color: #00FF88; font-size: 13px; }
+#conn-error.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<!-- CONNECTION ERROR OVERLAY -->
+<div id="conn-error">
+  <h2>⚠ SERVER OFFLINE</h2>
+  <p>Start the Julia GPU server first:</p>
+  <code>julia server.jl</code>
+  <p style="color:#447755;font-size:10px;margin-top:8px;">
+    Then reload this page.<br>
+    Server runs on localhost:8080
+  </p>
+  <button onclick="retryConnection()" style="width:160px;text-align:center;margin-top:8px;">
+    ↺ RETRY CONNECTION
+  </button>
+</div>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="title">SLIME FLOW <span>//</span> SENTINEL <span>//</span> VEILPIERCER</div>
+  <div id="fps-display">-- FPS</div>
+  <div id="status-badge">● CONNECTING</div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- LEFT PANEL -->
+  <div id="left-panel">
+
+    <div>
+      <div class="panel-title">SWARM STATUS</div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+        <div class="metric-row">
+          <span class="metric-label">STEP</span>
+          <span class="metric-val" id="m-step">0</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">ALIVE</span>
+          <span class="metric-val" id="m-alive">512</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">ROGUES</span>
+          <span class="metric-val magenta" id="m-rogues">0</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">QUARANTINED</span>
+          <span class="metric-val warn" id="m-quaran">0</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">FAULT ZONE</span>
+          <span class="metric-val" id="m-fault" style="color:#447755">CLEAR</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel-title">FLOW METRICS</div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px;">
+        <div>
+          <div class="metric-row">
+            <span class="metric-label">DENSITY</span>
+            <span class="metric-val" id="m-density">0%</span>
+          </div>
+          <div class="bar-wrap">
+            <div class="bar-bg"><div class="bar-fill" id="bar-density" style="background:#00FF88;width:0%"></div></div>
+          </div>
+        </div>
+        <div>
+          <div class="metric-row">
+            <span class="metric-label">PEAK SIGNAL</span>
+            <span class="metric-val" id="m-peak">0.00</span>
+          </div>
+        </div>
+        <div>
+          <div class="metric-row">
+            <span class="metric-label">ROGUE SPREAD</span>
+            <span class="metric-val magenta" id="m-rspread">0%</span>
+          </div>
+          <div class="bar-wrap">
+            <div class="bar-bg"><div class="bar-fill" id="bar-rspread" style="background:#CC00FF;width:0%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel-title">AGENT TYPES</div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
+        <div class="agent-type"><div class="dot" style="background:#4488FF"></div><span>SCOUT</span><span style="margin-left:auto;color:#4488FF" id="c-scout">80</span></div>
+        <div class="agent-type"><div class="dot" style="background:#00FF88"></div><span>HARVESTER</span><span style="margin-left:auto;color:#00FF88" id="c-harv">200</span></div>
+        <div class="agent-type"><div class="dot" style="background:#FFDD00"></div><span>GUARDIAN</span><span style="margin-left:auto;color:#FFDD00" id="c-guard">60</span></div>
+        <div class="agent-type"><div class="dot" style="background:#FF8800"></div><span>EMERGENT</span><span style="margin-left:auto;color:#FF8800" id="c-emerg">80</span></div>
+        <div class="agent-type"><div class="dot" style="background:#CC00FF"></div><span>ROGUE</span><span style="margin-left:auto;color:#CC00FF" id="c-rogue">0</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel-title">CONTROLS</div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
+        <button id="btn-veil" class="magenta active" onclick="toggleVeil()">👁 VEIL ON</button>
+        <button class="magenta" onclick="spawnRogues()">☠ SPAWN ROGUES</button>
+        <button class="danger" onclick="injectFault()">⚡ FAULT INJECT</button>
+        <button onclick="clearFault()" style="border-color:#447755;color:#447755">✕ CLEAR FAULT</button>
+        <button onclick="resetSim()">↺ RESET</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- CANVAS -->
+  <div id="canvas-wrap">
+    <canvas id="main-canvas"></canvas>
+    <canvas id="overlay-canvas"></canvas>
+    <div id="click-hint">CLICK TO DEPOSIT PHEROMONE</div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div id="right-panel">
+
+    <div id="veil-eye">
+      <div id="veil-iris" class="active">👁</div>
+      <div id="veil-label">VEILPIERCER ACTIVE</div>
+    </div>
+
+    <div>
+      <div class="panel-title">THREAT LEVEL</div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px;">
+        <div>
+          <div class="metric-row">
+            <span class="metric-label">ANOMALY SCORE</span>
+            <span class="metric-val" id="m-anomaly">0.00</span>
+          </div>
+          <div class="bar-wrap">
+            <div class="bar-bg"><div class="bar-fill" id="anomaly-bar-fill" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div>
+          <div class="metric-row">
+            <span class="metric-label">DATA LEAK RISK</span>
+            <span class="metric-val" id="m-leak">0%</span>
+          </div>
+          <div class="bar-wrap">
+            <div class="bar-bg"><div class="bar-fill" id="bar-leak" style="background:#FF3333;width:0%"></div></div>
+          </div>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">VEIL INTEGRITY</span>
+          <span class="metric-val" id="m-integrity">100%</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">GPU SOURCE</span>
+          <span class="metric-val" id="m-gpu" style="font-size:9px;color:#00CCFF">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel-title">EVENT LOG</div>
+      <div id="event-log" style="margin-top:6px;"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+const SERVER   = 'http://localhost:8080';
+const COLORS   = { 1:'#4488FF', 2:'#00FF88', 3:'#FFDD00', 4:'#FF8800', 5:'#CC00FF' };
+const AGENT_R  = { 1:2.5, 2:3.5, 3:3.0, 4:2.8, 5:3.2 };
+
+// ── STATE ───────────────────────────────────────────────────────────────────
+let veilOn      = true;
+let lastFrame   = null;
+let running     = false;
+let connected   = false;
+let fpsArr      = [];
+let lastTime    = performance.now();
+let loopTimer   = null;
+let manualDeposit = false;
+
+// ── CANVAS SETUP ────────────────────────────────────────────────────────────
+const mainCanvas    = document.getElementById('main-canvas');
+const overlayCanvas = document.getElementById('overlay-canvas');
+const ctx           = mainCanvas.getContext('2d');
+const octx          = overlayCanvas.getContext('2d');
+
+function resizeCanvases() {
+  const wrap = document.getElementById('canvas-wrap');
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  mainCanvas.width    = overlayCanvas.width    = w;
+  mainCanvas.height   = overlayCanvas.height   = h;
+}
+resizeCanvases();
+window.addEventListener('resize', resizeCanvases);
+
+// ── RENDER ──────────────────────────────────────────────────────────────────
+function render(frame) {
+  const cw = mainCanvas.width, ch = mainCanvas.height;
+  const gw = frame.w, gh = frame.h;
+
+  // --- pheromone grid (main canvas) ---
+  const imgData = ctx.createImageData(gw, gh);
+  const d       = imgData.data;
+
+  for (let i = 0; i < gw * gh; i++) {
+    const v  = frame.grid[i];
+    const rv = veilOn ? frame.rogue_grid[i] : 0;
+    const base = Math.min(v * 255, 255);
+    const r_v  = Math.min(rv * 255, 255);
+    d[i*4]   = Math.min(base * 0.1 + r_v * 0.8, 255);  // R — rogue red/magenta
+    d[i*4+1] = Math.min(base * 1.0, 255);               // G — pheromone green
+    d[i*4+2] = Math.min(base * 0.2 + r_v * 0.6, 255);  // B — slight blue + rogue purple
+    d[i*4+3] = Math.min(base * 3 + r_v * 2 + 10, 255); // A
+  }
+
+  // Scale to canvas
+  const offscreen = new OffscreenCanvas(gw, gh);
+  offscreen.getContext('2d').putImageData(imgData, 0, 0);
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(offscreen, 0, 0, cw, ch);
+  ctx.restore();
+
+  // --- agents (overlay canvas) ---
+  octx.clearRect(0, 0, cw, ch);
+
+  for (const ag of frame.agents) {
+    const x = ag.x * cw;
+    const y = ag.y * ch;
+    const t = ag.t;
+    const r = AGENT_R[t] ?? 3;
+    const col = COLORS[t] ?? '#FFFFFF';
+
+    if (ag.q === 1) {
+      // Quarantined — purple X ring
+      octx.strokeStyle = '#CC00FF';
+      octx.lineWidth   = 1.5;
+      octx.beginPath(); octx.arc(x, y, r + 3, 0, Math.PI*2); octx.stroke();
+      octx.strokeStyle = '#CC00FF88';
+      octx.lineWidth   = 1;
+      octx.beginPath(); octx.moveTo(x-r, y-r); octx.lineTo(x+r, y+r); octx.stroke();
+      octx.beginPath(); octx.moveTo(x+r, y-r); octx.lineTo(x-r, y+r); octx.stroke();
+      continue;
+    }
+    if (ag.q === 2) continue; // fault-killed, invisible
+
+    // Anomaly glow for rogues
+    if (t === 5 && ag.a > 0.3) {
+      octx.beginPath();
+      octx.arc(x, y, r + ag.a * 8, 0, Math.PI*2);
+      octx.fillStyle = `rgba(204,0,255,${ag.a * 0.15})`;
+      octx.fill();
+    }
+
+    octx.beginPath();
+    octx.arc(x, y, r, 0, Math.PI*2);
+    octx.fillStyle = col;
+    octx.fill();
+  }
+
+  // Fault zone indicator
+  if (frame.fault_active) {
+    octx.beginPath();
+    octx.arc(
+      (lastFaultX ?? 0.5) * cw,
+      (lastFaultY ?? 0.5) * ch,
+      Math.sqrt(400) * (cw / 128),
+      0, Math.PI*2
+    );
+    octx.strokeStyle = '#FF333388';
+    octx.lineWidth   = 2;
+    octx.setLineDash([4, 4]);
+    octx.stroke();
+    octx.setLineDash([]);
+  }
+}
+
+// ── UPDATE UI ───────────────────────────────────────────────────────────────
+let prevQuaran = 0;
+let prevRogues = 0;
+let lastFaultX = null, lastFaultY = null;
+
+function updateUI(frame) {
+  document.getElementById('m-step').textContent   = frame.step;
+  document.getElementById('m-rogues').textContent = frame.rogue_count;
+  document.getElementById('m-quaran').textContent = frame.quarantine_count;
+  document.getElementById('m-fault').textContent  = frame.fault_active ? '⚡ ACTIVE' : 'CLEAR';
+  document.getElementById('m-fault').style.color  = frame.fault_active ? '#FF3333' : '#447755';
+
+  // Count types
+  const counts = {1:0,2:0,3:0,4:0,5:0};
+  let alive = 0;
+  let totalAnomaly = 0;
+  let totalRoguePhero = 0;
+  for (const ag of frame.agents) {
+    if (ag.q !== 2) { counts[ag.t]++; alive++; }
+    totalAnomaly += ag.a;
+    totalRoguePhero += frame.rogue_grid ? 0 : 0;
+  }
+  document.getElementById('m-alive').textContent   = alive;
+  document.getElementById('c-scout').textContent   = counts[1];
+  document.getElementById('c-harv').textContent    = counts[2];
+  document.getElementById('c-guard').textContent   = counts[3];
+  document.getElementById('c-emerg').textContent   = counts[4];
+  document.getElementById('c-rogue').textContent   = counts[5];
+
+  // Flow metrics
+  const gridSum = frame.grid.reduce((a,b)=>a+b,0);
+  const density = Math.min(gridSum / (frame.w * frame.h) * 100, 100);
+  const peak    = Math.max(...frame.grid);
+  document.getElementById('m-density').textContent = density.toFixed(1) + '%';
+  document.getElementById('bar-density').style.width = density + '%';
+  document.getElementById('m-peak').textContent = peak.toFixed(3);
+
+  const rogueSum  = frame.rogue_grid.reduce((a,b)=>a+b,0);
+  const rspread   = Math.min(rogueSum / (frame.w * frame.h) * 300, 100);
+  document.getElementById('m-rspread').textContent = rspread.toFixed(1) + '%';
+  document.getElementById('bar-rspread').style.width = rspread + '%';
+
+  // Veil / anomaly
+  const avgAnomaly = frame.rogue_count > 0 ? Math.min(totalAnomaly / frame.rogue_count, 1) : 0;
+  const leakRisk   = Math.min(rspread * 1.5, 100);
+  const integrity  = Math.max(100 - leakRisk * 0.8, 0);
+  document.getElementById('m-anomaly').textContent  = avgAnomaly.toFixed(2);
+  document.getElementById('anomaly-bar-fill').style.width = (avgAnomaly * 100) + '%';
+  document.getElementById('m-leak').textContent     = leakRisk.toFixed(1) + '%';
+  document.getElementById('bar-leak').style.width   = leakRisk + '%';
+  document.getElementById('m-integrity').textContent = integrity.toFixed(0) + '%';
+
+  // Event log
+  if (frame.quarantine_count > prevQuaran) {
+    addLog(`QUARANTINED: ${frame.quarantine_count - prevQuaran} rogue agent(s)`, 'quarant');
+  }
+  if (frame.rogue_count > prevRogues) {
+    addLog(`ROGUE INTRUSION: ${frame.rogue_count - prevRogues} agent(s) infiltrated`, 'rogue');
+  }
+  prevQuaran = frame.quarantine_count;
+  prevRogues = frame.rogue_count;
+}
+
+// ── EVENT LOG ───────────────────────────────────────────────────────────────
+const MAX_LOG = 60;
+function addLog(msg, type='flow') {
+  const log = document.getElementById('event-log');
+  const el  = document.createElement('div');
+  el.className = `log-entry ${type}`;
+  el.textContent = `[${String(lastFrame?.step ?? 0).padStart(5,'0')}] ${msg}`;
+  log.prepend(el);
+  while (log.children.length > MAX_LOG) log.removeChild(log.lastChild);
+}
+
+// ── FETCH LOOP ──────────────────────────────────────────────────────────────
+async function tick() {
+  try {
+    const res = await fetch(`${SERVER}/frame`);
+    if (!res.ok) throw new Error('bad response');
+    const frame = await res.json();
+    lastFrame = frame;
+
+    if (!connected) {
+      connected = true;
+      document.getElementById('conn-error').classList.add('hidden');
+      document.getElementById('status-badge').textContent = '● LIVE GPU';
+      document.getElementById('status-badge').className   = 'live';
+      addLog('Connected to Julia GPU server', 'system');
+      fetchGPUInfo();
+    }
+
+    render(frame);
+    updateUI(frame);
+
+    // FPS
+    const now = performance.now();
+    fpsArr.push(1000 / (now - lastTime));
+    lastTime = now;
+    if (fpsArr.length > 20) fpsArr.shift();
+    const fps = fpsArr.reduce((a,b)=>a+b,0) / fpsArr.length;
+    document.getElementById('fps-display').textContent = fps.toFixed(1) + ' FPS';
+
+  } catch(e) {
+    if (connected) {
+      connected = false;
+      document.getElementById('status-badge').textContent = '● OFFLINE';
+      document.getElementById('status-badge').className   = 'error';
+      addLog('Lost connection to server', 'fault');
+    }
+  }
+
+  if (running) loopTimer = setTimeout(tick, 50);
+}
+
+function startLoop() {
+  if (running) return;
+  running = true;
+  tick();
+}
+
+async function fetchGPUInfo() {
+  try {
+    const res = await fetch(`${SERVER}/status`);
+    const d   = await res.json();
+    document.getElementById('m-gpu').textContent = d.gpu ?? '—';
+    addLog(`GPU: ${d.gpu}`, 'system');
+  } catch {}
+}
+
+// ── CONTROLS ────────────────────────────────────────────────────────────────
+function toggleVeil() {
+  veilOn = !veilOn;
+  const btn = document.getElementById('btn-veil');
+  const iris = document.getElementById('veil-iris');
+  const lbl  = document.getElementById('veil-label');
+  btn.textContent = veilOn ? '👁 VEIL ON' : '👁 VEIL OFF';
+  btn.classList.toggle('active', veilOn);
+  iris.className = veilOn ? 'active' : 'inactive';
+  lbl.className  = veilOn ? '' : 'inactive';
+  lbl.textContent = veilOn ? 'VEILPIERCER ACTIVE' : 'VEILPIERCER OFFLINE';
+  addLog(veilOn ? 'Veilpiercer reactivated' : 'Veilpiercer DISABLED — rogues undetected', veilOn ? 'system' : 'fault');
+}
+
+async function spawnRogues() {
+  await fetch(`${SERVER}/rogues`);
+  addLog('Rogue agents injected into swarm', 'rogue');
+}
+
+let lastFaultActive = false;
+async function injectFault() {
+  const x = 0.3 + Math.random() * 0.4;
+  const y = 0.3 + Math.random() * 0.4;
+  lastFaultX = x; lastFaultY = y;
+  await fetch(`${SERVER}/fault`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({x, y})
+  });
+  addLog(`Fault zone injected at (${(x*100).toFixed(0)}%, ${(y*100).toFixed(0)}%)`, 'fault');
+}
+
+async function clearFault() {
+  await fetch(`${SERVER}/fault/clear`);
+  lastFaultX = lastFaultY = null;
+  addLog('Fault zone cleared — swarm rerouting', 'flow');
+}
+
+async function resetSim() {
+  await fetch(`${SERVER}/reset`);
+  prevQuaran = 0; prevRogues = 0;
+  addLog('Simulation reset', 'system');
+}
+
+async function retryConnection() {
+  connected = false;
+  if (!running) startLoop();
+}
+
+// ── CANVAS CLICK → pheromone deposit ────────────────────────────────────────
+overlayCanvas.addEventListener('click', async (e) => {
+  const rect = overlayCanvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = (e.clientY - rect.top)  / rect.height;
+  // Post manual deposit as a mini fault-clear + info (server doesn't need it — just visual feedback)
+  addLog(`Manual pheromone burst at (${(x*100).toFixed(0)}%, ${(y*100).toFixed(0)}%)`, 'flow');
+});
+
+// ── BOOT ────────────────────────────────────────────────────────────────────
+addLog('Slime Flow // Sentinel // Veilpiercer', 'system');
+addLog('Connecting to Julia GPU server...', 'system');
+startLoop();
+</script>
+</body>
+</html>
