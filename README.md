@@ -1,5 +1,16 @@
 # SLIME FLOW // SENTINEL // VEILPIERCER
-
+🧫 I built a swarm brain for autonomous machines — powered by a GPU, inspired by slime mold.
+No central controller. No cloud. No single point of failure.
+It's called Slime Flow. Here's what it does:
+→ 512 agents coordinate using pheromone trails — no instructions, no map, no leader
+→ Fault zones appear — the swarm reroutes in milliseconds
+→ Rogue agents infiltrate — Veilpiercer detects them, scores their anomaly, quarantines them live
+→ All of it running on an RTX 4060, streamed to the browser in real time
+The same logic slime mold has used for 500 million years. Applied to drones, robots, and AI agent networks.
+Demo: https://youtu.be/UiYcXbyOEvQ
+Repo: https://github.com/flipperspectives-crypto/slime-flow
+Open to conversations with anyone building autonomous systems who needs a coordination layer that actually survives chaos.
+#swarmAI #autonomoussystems #biomimetic #drones #robotics #AIinfrastructure #Julia #CUDA
 > Biomimetic swarm intelligence for autonomous machines — no central controller, no cloud, no surveillance.
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
