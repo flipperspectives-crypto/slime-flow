@@ -1,0 +1,1 @@
+{\n  "name": "slime-flow",\n  "version": "1.0.0",\n  "description": "Demo project for slime flow.",\n  "main": "index.js",\n  "scripts": {\n    "test": "echo 'Error: no test specified' && exit 1",\n    "start": "node index.js"\n  },\n  "dependencies": {\n    "example-dependency": "^1.0.0"\n  },\n  "devDependencies": {\n    "example-dev-dependency": "^1.0.0"\n  }\n}
