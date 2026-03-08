@@ -9,6 +9,16 @@
 
 ---
 
+## Live Demo
+
+[![Slime Flow Live GPU Demo](https://img.youtube.com/vi/UiYcXbyOEvQ/maxresdefault.jpg)](https://youtu.be/UiYcXbyOEvQ)
+
+▶ **[Watch the live GPU demo on YouTube](https://youtu.be/UiYcXbyOEvQ)**
+
+RTX 4060 running Julia CUDA kernels → streamed live to browser. Rogues infiltrating, Veilpiercer quarantining, fault zone forcing swarm reroute in real time.
+
+---
+
 ## What Is This
 
 Slime mold has navigated mazes, found optimal paths, and survived chaos for 500 million years — without a brain, without a leader, without a map.
@@ -27,27 +37,27 @@ No cloud dependency. No central server. Runs fully offline on edge hardware.
 
 ---
 
-## Live Demo
+## Run It
 
-Open `slimeflow_veilpiercer.html` directly in any browser. No install required.
+### Option A — Browser only (no install)
 
-**What you'll see:**
-
-- 420 agents across 5 types moving in real time
-- Pheromone trails growing and decaying organically
-- Sentinel HUD tracking flow stability, egress, and convergence
-- Veilpiercer detecting rogue agents and quarantining them live
-
-**Controls:**
+Open `slimeflow_veilpiercer.html` directly in any browser.
 
 | Button | Action |
 |---|---|
 | `👁 VEIL ON/OFF` | Toggle rogue detection — turn it off and watch chaos spread |
 | `☠ ROGUES` | Spawn 8–16 rogue agents near existing clusters to blend in |
 | `⚡ FAULT` | Inject a kill zone — Guardians are immune, others reroute |
-| `+ SWARM` | Add 64 mixed agents |
 | `↺ RESET` | Full reset |
 | Click canvas | Drop a pheromone burst anywhere |
+
+### Option B — Live GPU bridge (requires Julia + NVIDIA GPU)
+
+```
+julia server.jl
+```
+
+Then open `slimeflow_live.html` in Chrome. Connects to `localhost:8080` and renders live GPU frames at ~18 FPS. See [BRIDGE.md](BRIDGE.md) for full setup.
 
 ---
 
@@ -78,17 +88,18 @@ Rogues leave a separate `rogue_pheromone` trail (purple overlay when Veil is ON)
 The core pheromone engine runs GPU-accelerated on CUDA via Julia:
 
 ```julia
-using CUDA, Flux
+using CUDA
 
-const W, H = 256, 256
+const W, H = 128, 128
 const N_AGENTS = 512
 
 pheromone = CUDA.zeros(Float32, W, H)
 ax = CUDA.rand(Float32, N_AGENTS) .* W
 ay = CUDA.rand(Float32, N_AGENTS) .* H
 
-# 100-step simulation
-# Step 100 — Total pheromone: 32459.2 — Peak: 16.4
+# Live output:
+# Device: NVIDIA GeForce RTX 4060 Laptop GPU
+# Serving on http://localhost:8080 at ~18 FPS
 ```
 
 **Tested on:** NVIDIA RTX 4060 Laptop GPU (8GB VRAM), Julia 1.12, CUDA 13.2, Driver 595.71.0
@@ -102,7 +113,7 @@ ay = CUDA.rand(Float32, N_AGENTS) .* H
 - [x] Veilpiercer rogue detection + quarantine
 - [x] Fault injection + self-healing
 - [x] Live HTML visualization dashboard
-- [ ] Julia → browser bridge (JSON pheromone grid export)
+- [x] Julia → browser bridge (live GPU stream)
 - [ ] Python / Rust SDK
 - [ ] ROS2 integration for real hardware
 - [ ] Edge deployment (Jetson Nano / Raspberry Pi)
