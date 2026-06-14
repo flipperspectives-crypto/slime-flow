@@ -70,6 +70,24 @@ julia server.jl
 
 Then open `slimeflow_live.html` in Chrome. Connects to `localhost:8080` and renders live GPU frames at ~18 FPS. See [BRIDGE.md](BRIDGE.md) for full setup.
 
+### Option C — Python SDK
+
+```bash
+pip install -e python-sdk/
+```
+
+```python
+from slimeflow import SlimeFlow
+
+sf = SlimeFlow()
+sf.spawn_rogues()
+
+for frame in sf.stream(max_frames=100):
+    print(f"Step {frame.step}: {frame.rogue_count} rogues, integrity {frame.integrity():.0f}%")
+```
+
+See [python-sdk/README.md](python-sdk/README.md) for full API docs. Async + numpy support available.
+
 ---
 
 ## Agent Types
@@ -125,7 +143,8 @@ ay = CUDA.rand(Float32, N_AGENTS) .* H
 - [x] Fault injection + self-healing
 - [x] Live HTML visualization dashboard
 - [x] Julia → browser bridge (live GPU stream)
-- [ ] Python / Rust SDK
+- [x] Python SDK
+- [ ] Rust SDK
 - [ ] ROS2 integration for real hardware
 - [ ] Edge deployment (Jetson Nano / Raspberry Pi)
 - [ ] Enterprise privacy audit logs
