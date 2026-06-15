@@ -4,7 +4,7 @@ OBSERVER — HN + GitHub problem tracker with smarter scoring.
 Port 8082. Polls HN top stories, GitHub trending, scores urgency/relevance.
 """
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import json, time, threading, urllib.request, re, os, glob
+import json, time, threading, urllib.request, re, os, glob, hashlib
 from datetime import datetime, timezone
 
 PORT = 8082
@@ -12,6 +12,8 @@ CACHE_TTL = 300  # 5 min
 
 problems = []
 last_fetch = 0
+fetch_generation = 0  # increments each refresh — helps close_loop detect new data
+resolved_ids = set()  # problem_ids that close_loop has resolved
 
 # Repos to scan for dependency manifest
 DEP_REPOS = [
@@ -166,6 +168,10 @@ def is_package_in_stack(advisory):
             return True
     return False
 
+def _make_id(title, url, source):
+    """Stable problem ID from title+url hash."""
+    return hashlib.md5(f"{source}:{title}:{url}".encode()).hexdigest()[:12]
+
 def fetch_hn():
     """Fetch top HN stories and extract problem/solution posts."""
     items = []
@@ -197,6 +203,7 @@ def fetch_hn():
                 final_score = base_score + urgency + (20 if score > 200 else 0)
                 
                 items.append({
+                    "id": _make_id(title, url, "HN"),
                     "source": "HN",
                     "title": title,
                     "url": url,
@@ -229,6 +236,7 @@ def fetch_github():
             severity = adv.get("severity", "medium")
             sev_score = {"critical": 40, "high": 30, "medium": 15, "low": 5}.get(severity, 10)
             items.append({
+                "id": _make_id(adv.get("summary", "?"), adv.get("html_url", ""), "GH"),
                 "source": "GH",
                 "title": adv.get("summary", "?")[:120],
                 "url": adv.get("html_url", ""),
@@ -240,6 +248,7 @@ def fetch_github():
         if filtered:
             # Filter summary for /problems only — dropped from /top to keep counts clean
             items.append({
+                "id": f"filter-{int(time.time())}",
                 "source": "GH",
                 "title": f"[{filtered} advisories filtered — not in our dependency stack]",
                 "url": "",
@@ -253,13 +262,16 @@ def fetch_github():
     return items
 
 def refresh():
-    global problems, last_fetch
+    global problems, last_fetch, fetch_generation
     while True:
         try:
             items = fetch_hn() + fetch_github()
+            # Drop resolved items
+            items = [i for i in items if i.get("id") not in resolved_ids]
             items.sort(key=lambda x: x["score"], reverse=True)
             problems = items
             last_fetch = time.time()
+            fetch_generation += 1
         except:
             pass
         time.sleep(CACHE_TTL)
@@ -267,16 +279,34 @@ def refresh():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
-            self.send_json({"service": "Observer", "problems": len(problems), "last_fetch": last_fetch})
+            self.send_json({"service": "Observer", "problems": len(problems), "last_fetch": last_fetch, "gen": fetch_generation})
         elif self.path == "/problems":
-            self.send_json({"problems": problems, "total": len(problems), "updated": last_fetch})
+            self.send_json({"problems": problems, "total": len(problems), "updated": last_fetch, "gen": fetch_generation})
         elif self.path == "/top":
-            # Only show real problems (score >= 0), drop filter metadata lines
             real = [p for p in problems if p["score"] >= 0]
             self.send_json({"problems": real[:10]})
         elif self.path == "/health":
             real_count = sum(1 for p in problems if p["score"] >= 0)
-            self.send_json({"status": "ok", "problems": real_count, "age": time.time() - last_fetch})
+            self.send_json({"status": "ok", "problems": real_count, "age": time.time() - last_fetch, "gen": fetch_generation})
+        else:
+            self.send_json({"error": "not found"}, 404)
+
+    def do_POST(self):
+        if self.path == "/resolve":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(length)) if length else {}
+                pid = body.get("id", "")
+                if pid:
+                    resolved_ids.add(pid)
+                    # Also remove from current problems list
+                    global problems
+                    problems = [p for p in problems if p.get("id") != pid]
+                    self.send_json({"resolved": pid, "ok": True})
+                else:
+                    self.send_json({"error": "missing id"}, 400)
+            except Exception as e:
+                self.send_json({"error": str(e)}, 500)
         else:
             self.send_json({"error": "not found"}, 404)
     
