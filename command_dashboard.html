@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>APSA-NET COMMAND</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#06060e;color:#b0b0c0;font-family:'Courier New',monospace;font-size:9px;padding:8px;max-width:100vw;overflow-x:hidden}
+h1{color:#0c8;font-size:14px;margin-bottom:2px;letter-spacing:2px}
+h2{color:#0aa;font-size:10px;border-bottom:1px solid #1a1a30;padding-bottom:2px;margin:8px 0 4px;letter-spacing:1px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px}
+.card{background:#0a0a16;border:1px solid #1a1a30;padding:8px;border-radius:3px}
+.card .v{font-size:20px;font-weight:bold}
+.card .l{font-size:7px;color:#555;margin-top:2px;text-transform:uppercase;letter-spacing:1px}
+.g{color:#0c8}.y{color:#ca0}.r{color:#c33}.c{color:#0cc}.m{color:#a6c}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.col{flex:1;min-width:250px}
+.bar-wrap{height:4px;background:#1a1a2e;border-radius:2px;margin-top:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:2px;transition:width .5s}
+.green{background:#0c8}.yellow{background:#ca0}.red{background:#c33}.cyan{background:#0cc}.purple{background:#a6c}
+table{width:100%;border-collapse:collapse;font-size:8px;margin-top:4px}
+td,th{padding:3px 4px;text-align:left;border-bottom:1px solid #111}
+th{color:#555;font-size:7px;text-transform:uppercase}
+tr:hover{background:#0a0a1e}
+.badge{padding:1px 5px;border-radius:2px;font-size:7px;font-weight:bold}
+.badge-ok{background:#0c8;color:#000}.badge-warn{background:#ca0;color:#000}.badge-bad{background:#c33;color:#fff}
+.status{font-size:7px;color:#444;margin-left:5px}
+.pulse{animation:pulse 2s infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+#footer{color:#333;font-size:7px;margin-top:12px;padding-top:4px;border-top:1px solid #1a1a30;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<h1>⚡ APSA-NET COMMAND</h1>
+<div style="color:#555;font-size:7px;margin-bottom:8px">
+  Autonomous Observe → Imagine → Build → Teach → Close Loop
+</div>
+
+<div class="grid" id="gauges">
+  <div class="card"><div class="v c" id="g-projects">--</div><div class="l">APSA Projects</div></div>
+  <div class="card"><div class="v g" id="g-healthy">--</div><div class="l">Healthy</div></div>
+  <div class="card"><div class="v c" id="g-observe">--</div><div class="l">Problems Observed</div></div>
+  <div class="card"><div class="v y" id="g-lines">--</div><div class="l">Lines of Code</div></div>
+</div>
+
+<div class="row">
+  <div class="col">
+    <h2>📱 SYSTEM</h2>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px"><span>RAM</span><span id="s-ram">--</span></div>
+      <div class="bar-wrap"><div class="bar-fill green" id="b-ram" style="width:0%"></div></div>
+      <div style="display:flex;justify-content:space-between;margin:4px 0 2px"><span>Disk</span><span id="s-disk">--</span></div>
+      <div class="bar-wrap"><div class="bar-fill purple" id="b-disk" style="width:0%"></div></div>
+      <div style="display:flex;justify-content:space-between;margin:4px 0 2px"><span>Swap</span><span id="s-swap">--</span></div>
+      <div class="bar-wrap"><div class="bar-fill yellow" id="b-swap" style="width:0%"></div></div>
+      <div style="margin-top:6px;display:flex;gap:12px;font-size:7px;color:#555">
+        <span>CPU <b style="color:#0cc" id="s-cpu">--</b></span>
+        <span>Load <b style="color:#ccc" id="s-load">--</b></span>
+        <span>Up <b style="color:#ccc" id="s-up">--</b></span>
+        <span>Procs <b style="color:#ccc" id="s-procs">--</b></span>
+      </div>
+    </div>
+    
+    <h2>🔭 OBSERVER <span class="status" id="obs-count"></span></h2>
+    <div id="obs-feed" style="max-height:200px;overflow-y:auto"></div>
+  </div>
+  
+  <div class="col">
+    <h2>📦 APSA PROJECTS <span class="status" id="cl-status"></span></h2>
+    <table>
+      <thead><tr><th>Project</th><th>Lines</th><th>Syntax</th><th>Health</th></tr></thead>
+      <tbody id="cl-table"></tbody>
+    </table>
+    
+    <h2>🧠 VEILPIERCER</h2>
+    <div class="card" id="vp-status" style="font-size:7px">
+      <span class="pulse">⟳</span> Loading...
+    </div>
+  </div>
+</div>
+
+<div id="footer">
+  <span id="f-time">--</span>
+  <span id="f-pipeline">next APSA run: --</span>
+</div>
+
+<script>
+async function poll(){
+  document.getElementById('f-time').textContent = new Date().toLocaleTimeString();
+  
+  // Phone Swarm
+  try{
+    let r = await fetch('/phone');
+    let d = await r.json();
+    document.getElementById('s-ram').textContent = (d.ram_used_pct||0).toFixed(0)+'% ('+(d.ram_free_mb||0).toFixed(0)+'M)';
+    document.getElementById('b-ram').style.width = (d.ram_used_pct||0)+'%';
+    document.getElementById('s-disk').textContent = (d.storage_used_pct||0).toFixed(0)+'% ('+(d.storage_avail_gb||0).toFixed(0)+'G)';
+    document.getElementById('b-disk').style.width = (d.storage_used_pct||0)+'%';
+    document.getElementById('s-swap').textContent = (d.swap_used_pct||0).toFixed(0)+'%';
+    document.getElementById('b-swap').style.width = (d.swap_used_pct||0)+'%';
+    document.getElementById('s-cpu').textContent = (d.cpu_pct||0).toFixed(0)+'%';
+    document.getElementById('s-load').textContent = (d.load_1m||0).toFixed(1);
+    document.getElementById('s-up').textContent = (d.uptime_hours||0).toFixed(0)+'h';
+    document.getElementById('s-procs').textContent = d.process_count||0;
+  }catch(e){}
+  
+  // Observer
+  try{
+    let r = await fetch('/observer');
+    let feed = await r.json();
+    document.getElementById('g-observe').textContent = feed.length;
+    document.getElementById('obs-count').textContent = feed.length+' problems';
+    document.getElementById('obs-feed').innerHTML = feed.slice(0,8).map(f=>`
+      <div style="padding:2px 0;border-bottom:1px solid #111;font-size:7px;cursor:pointer" 
+           onclick="window.open('${f.url}','_blank')">
+        <span style="color:#444">[${f.source}]</span>
+        <span style="color:#0c8">${(f.solvability||0).toFixed(2)}</span>
+        <span style="color:#a6c">${(f.impact||0).toFixed(2)}</span>
+        ${f.title.slice(0,70)}
+      </div>`).join('');
+  }catch(e){}
+  
+  // Close Loop
+  try{
+    let r = await fetch('/closeloop');
+    let d = await r.json();
+    document.getElementById('g-projects').textContent = d.total||0;
+    document.getElementById('g-healthy').textContent = d.healthy||0;
+    document.getElementById('g-lines').textContent = d.total_code_lines||0;
+    document.getElementById('cl-status').textContent = 
+      `${d.healthy||0} healthy, ${d.degraded||0} degraded, ${d.broken||0} broken`;
+    
+    let html = '';
+    for(let p of (d.projects||[])){
+      let c = p.checks||{};
+      let badge = c.health==='healthy'?'badge-ok':c.health==='degraded'?'badge-warn':'badge-bad';
+      html += `<tr>
+        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.name}">${(p.name||'').slice(0,30)}</td>
+        <td>${c.code_lines||0}</td>
+        <td><span class="badge ${c.syntax_ok?'badge-ok':'badge-bad'}">${c.syntax_ok?'✓':'✗'}</span></td>
+        <td><span class="badge ${badge}">${c.health||'?'}</span></td>
+      </tr>`;
+    }
+    document.getElementById('cl-table').innerHTML = html || '<tr><td colspan="4" style="color:#444">No projects yet</td></tr>';
+  }catch(e){}
+  
+  // VEILPIERCER
+  try{
+    let r = await fetch('http://127.0.0.1:8000/health');
+    let d = await r.json();
+    document.getElementById('vp-status').innerHTML = 
+      `<span style="color:#0c8">●</span> ONLINE | ${d.uptime||'?'} up | ${d.agents||0} agents | ${d.memory_entries||0} memories`;
+  }catch(e){
+    document.getElementById('vp-status').innerHTML = '<span style="color:#c33">●</span> OFFLINE';
+  }
+}
+
+poll();
+setInterval(poll, 3000);
+</script>
+</body>
+</html>

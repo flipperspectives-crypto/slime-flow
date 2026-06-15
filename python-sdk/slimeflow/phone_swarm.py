@@ -221,7 +221,8 @@ class PhoneMonitor:
         m["uptime_hours"] = round(d * 24 + h + mi / 60, 1)
 
         # ── Processes ──
-        out = self._run(["ps", "-eo", "pid,pcpu,pmem,rss,comm", "--sort=-pcpu"])
+        # Android isolates Termux processes; -A shows all we can see
+        out = self._run(["ps", "-A", "-eo", "pid,pcpu,pmem,rss,comm", "--sort=-pcpu"])
         lines = out.strip().split("\n")
         procs = []
         total_cpu = 0.0
@@ -454,6 +455,7 @@ class ActionHandler:
 class Handler(BaseHTTPRequestHandler):
     monitor: Optional[PhoneMonitor] = None
     actions: Optional[ActionHandler] = None
+    alert: Optional[AlertEngine] = None
 
     def log_message(self, f, *a):
         pass
@@ -494,6 +496,10 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             return self._file(DASHBOARD_PATH, "text/html; charset=utf-8")
 
+        if path == "/command":
+            return self._file(os.path.join(os.path.dirname(DASHBOARD_PATH), "command_dashboard.html"), 
+                            "text/html; charset=utf-8")
+
         if path == "/ping":
             return self._json({"ok": True})
 
@@ -523,6 +529,62 @@ class Handler(BaseHTTPRequestHandler):
             ok, msg = self.actions.restart_hermes_agent()
             return self._json({"success": ok, "message": msg})
 
+        if path == "/webhook":
+            return self._json({"configured": bool(self.alert and self.alert.webhook_url),
+                               "url_preview": (self.alert.webhook_url[:60]+"..." if self.alert and self.alert.webhook_url else None)})
+
+        if path == "/observer":
+            return self._proxy("http://127.0.0.1:8082/top")
+
+        if path == "/observer/stats":
+            return self._proxy("http://127.0.0.1:8082/problems")
+
+        if path == "/closeloop":
+            return self._proxy("http://127.0.0.1:8084/projects")
+
+        self.send_response(404); self.end_headers()
+
+    def _proxy(self, url: str):
+        """Proxy a request to the Observer agent."""
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=3) as r:
+                data = r.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self._cors()
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception:
+            self._json({"error": "observer unreachable"}, 502)
+
+    def do_POST(self):
+        path = self.path.split("?")[0]
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length else b"{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            return self._json({"ok": False, "error": "invalid JSON"}, 400)
+
+        if path == "/webhook":
+            url = data.get("url", "").strip()
+            if not url:
+                return self._json({"ok": False, "error": "url required"}, 400)
+            if not url.startswith("https://discord.com/api/webhooks/"):
+                return self._json({"ok": False, "error": "invalid webhook URL — must start with https://discord.com/api/webhooks/"}, 400)
+            if self.alert:
+                self.alert.webhook_url = url
+                return self._json({"ok": True, "message": "Webhook configured. Test it with /alert-test"})
+            return self._json({"ok": False, "error": "alert engine not available"}, 500)
+
+        if path == "/alert-test":
+            if not self.alert or not self.alert.webhook_url:
+                return self._json({"ok": False, "error": "No webhook configured — POST to /webhook first"}, 400)
+            sent = self.alert.send("Test alert from Phone Swarm — webhook is working.", "info")
+            return self._json({"ok": True, "sent": sent, "message": "Test alert sent to Discord" if sent else "Rate-limited — try again in a few minutes"})
+
         self.send_response(404); self.end_headers()
 
 
@@ -539,6 +601,7 @@ def main():
     monitor = PhoneMonitor(args.db, alert_engine)
     Handler.monitor = monitor
     Handler.actions = ActionHandler(monitor)
+    Handler.alert = alert_engine
     time.sleep(2)
 
     m = monitor.get_state()
