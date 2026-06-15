@@ -12,7 +12,7 @@ HOME = os.path.expanduser("~")
 OBSERVER_URL = "http://127.0.0.1:8082"
 POLL_INTERVAL = 300  # match observer's CACHE_TTL
 STATE_FILE = os.path.join(HOME, ".hermes", "close_loop_state.json")
-OLLAMA_MODEL = os.environ.get("CLOSE_LOOP_OLLAMA_MODEL", "phi3:mini")
+OLLAMA_MODEL = os.environ.get("CLOSE_LOOP_OLLAMA_MODEL", "lucy:latest")
 
 # Score tracking: {problem_id: [generation, score, generation, score, ...]}
 score_history = {}
@@ -124,7 +124,7 @@ def annotate_with_ollama(task_id, problem):
     try:
         r = subprocess.run(
             ["ollama", "run", OLLAMA_MODEL, prompt],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=180,
             env={**os.environ, "HOME": HOME}
         )
         if r.returncode == 0 and r.stdout.strip():
