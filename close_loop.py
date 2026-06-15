@@ -11,13 +11,36 @@ PORT = 8084
 HOME = os.path.expanduser("~")
 OBSERVER_URL = "http://127.0.0.1:8082"
 POLL_INTERVAL = 300  # match observer's CACHE_TTL
+STATE_FILE = os.path.join(HOME, ".hermes", "close_loop_state.json")
+OLLAMA_MODEL = os.environ.get("CLOSE_LOOP_OLLAMA_MODEL", "phi3:mini")
 
 # Score tracking: {problem_id: [generation, score, generation, score, ...]}
 score_history = {}
-# Kanban cards already created (don't duplicate)
+# Kanban cards already created (don't duplicate) — persisted to disk
 kanban_created = set()
 # Action log
 action_log = []
+
+def load_state():
+    """Load persisted kanban_created set from disk."""
+    global kanban_created
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE) as f:
+                data = json.load(f)
+            kanban_created = set(data.get("kanban_created", []))
+            print(f"[close_loop] loaded {len(kanban_created)} persisted kanban IDs")
+    except Exception:
+        pass
+
+def save_kanban_created():
+    """Persist kanban_created to disk."""
+    try:
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        with open(STATE_FILE, "w") as f:
+            json.dump({"kanban_created": list(kanban_created), "updated": datetime.now().isoformat()}, f)
+    except Exception:
+        pass
 
 def check_projects():
     """Check all known APSA/project repos for health."""
@@ -84,6 +107,67 @@ def relevance_tag(title):
     return tags if tags else ["general"]
 
 
+def annotate_with_ollama(task_id, problem):
+    """Use Ollama to generate a 'why this matters for your stack' annotation and post as comment."""
+    title = problem.get("title", "")
+    url = problem.get("url", "")
+    source = problem.get("source", "")
+
+    prompt = (
+        f"You are a technical analyst. Given this {source} post, write exactly TWO sentences "
+        f"explaining why this matters for an AI infrastructure developer's stack. "
+        f"Be specific and actionable. No preamble, no fluff.\n\n"
+        f"Title: {title}\nURL: {url}\n\n"
+        f"Why this matters:"
+    )
+
+    try:
+        r = subprocess.run(
+            ["ollama", "run", OLLAMA_MODEL, prompt],
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ, "HOME": HOME}
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            annotation = r.stdout.strip()
+            # Strip ANSI escape codes that Ollama sometimes emits
+            import re as _re
+            annotation = _re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', annotation)
+            annotation = _re.sub(r'\x1b\[[0-9]*[KD]', '', annotation)
+            annotation = annotation.strip()
+            # Post as comment on the kanban card
+            cr = subprocess.run(
+                ["hermes", "kanban", "comment", task_id, annotation],
+                capture_output=True, text=True, timeout=10,
+                env={**os.environ, "HOME": HOME}
+            )
+            action_log.append({
+                "action": "ai_annotated",
+                "problem_id": problem.get("id", "?"),
+                "task_id": task_id,
+                "model": OLLAMA_MODEL,
+                "annotation": annotation[:200],
+                "time": datetime.now().isoformat()
+            })
+            return annotation
+        else:
+            action_log.append({
+                "action": "ai_annotation_failed",
+                "problem_id": problem.get("id", "?"),
+                "task_id": task_id,
+                "error": r.stderr[:200] if r.stderr else "empty response",
+                "time": datetime.now().isoformat()
+            })
+    except Exception as e:
+        action_log.append({
+            "action": "ai_annotation_error",
+            "problem_id": problem.get("id", "?"),
+            "task_id": task_id,
+            "error": str(e)[:200],
+            "time": datetime.now().isoformat()
+        })
+    return None
+
+
 def create_kanban_card(problem):
     """Create a Hermes kanban card for a high-score problem."""
     title = problem["title"][:80]
@@ -114,6 +198,13 @@ def create_kanban_card(problem):
                 "task_id": task_id,
                 "time": datetime.now().isoformat()
             })
+            # AI annotation for [ai]-tagged cards
+            if "ai" in tags and task_id != "?":
+                threading.Thread(
+                    target=annotate_with_ollama,
+                    args=(task_id, problem),
+                    daemon=True
+                ).start()
             return task_id
         else:
             action_log.append({
@@ -197,6 +288,7 @@ def triage_loop():
                         tid = create_kanban_card(p)
                         if tid:
                             kanban_created.add(pid)
+                            save_kanban_created()
 
                     # --- STALE DETECTION: 3 identical scores = auto-resolve ---
                     history = score_history[pid]
@@ -313,6 +405,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     import socket as _socket
+    load_state()
     threading.Thread(target=triage_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
     server.socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
