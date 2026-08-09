@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>PHONE SWARM v2</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden}
+body{background:#08080f;color:#b0b0c0;font-family:'Courier New',monospace;display:flex;flex-direction:column;font-size:10px}
+
+/* Top bar */
+#top{display:flex;align-items:center;gap:8px;padding:3px 8px;background:#0c0c16;border-bottom:1px solid #1a1a30;flex-shrink:0;flex-wrap:wrap}
+#top .title{color:#00cc88;font-weight:bold;font-size:11px;letter-spacing:1px}
+.g{display:flex;align-items:center;gap:3px;font-size:9px}
+.g .l{color:#555;font-size:8px}
+.g .v{font-weight:bold;min-width:30px;text-align:right}
+.g .b{width:30px;height:5px;background:#1a1a2e;border-radius:2px;overflow:hidden}
+.g .f{height:100%;border-radius:2px;transition:width .5s}
+.gr{background:#00cc66}.ye{background:#ccaa00}.rd{background:#cc3333}.cy{background:#00cccc}.pu{background:#8844cc}
+
+/* Main */
+#main{flex:1;display:flex;overflow:hidden;min-height:0}
+#procs{flex:1;overflow-y:auto;padding:3px}
+#side{width:155px;background:#0c0c16;border-left:1px solid #1a1a30;padding:5px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;flex-shrink:0;font-size:8px}
+
+/* Process rows */
+.pr{display:flex;align-items:center;gap:4px;padding:2px 3px;border-bottom:1px solid #111;font-size:8px}
+.pr:hover{background:#111122}
+.pr .p{color:#555;width:30px;text-align:right;flex-shrink:0;cursor:pointer}
+.pr .p:hover{color:#cc3333}
+.pr .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pr .c{width:32px;text-align:right;flex-shrink:0;font-weight:bold}
+.pr .m{width:30px;text-align:right;flex-shrink:0}
+.pr .r{width:40px;text-align:right;flex-shrink:0;color:#555;font-size:7px}
+.ph{display:flex;gap:4px;padding:2px 3px;font-size:7px;color:#444;border-bottom:1px solid #1a1a30;position:sticky;top:0;background:#08080f;z-index:1}
+.ph span{flex-shrink:0}.ph .p{width:30px;text-align:right}.ph .n{flex:1}.ph .c{width:32px;text-align:right}.ph .m{width:30px;text-align:right}.ph .r{width:40px;text-align:right}
+
+/* Side panel */
+.st{color:#444;font-size:7px;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid #1a1a30;padding-bottom:2px;margin-top:4px}
+.st:first-child{margin-top:0}
+.sr{display:flex;justify-content:space-between;padding:1px 0}
+.sr .k{color:#666}.sr .v{font-weight:bold}.sr .g{color:#00cc66}.sr .w{color:#ccaa00}.sr .b{color:#cc3333}
+
+/* Chart area */
+#chart-wrap{height:80px;position:relative;border-bottom:1px solid #1a1a30;background:#0a0a14;flex-shrink:0}
+#chart-canvas{width:100%;height:100%}
+
+/* Actions */
+.act-btn{background:#0d0d20;border:1px solid #1a1a30;color:#888;font-family:inherit;font-size:7px;padding:3px;cursor:pointer;text-align:left;width:100%;margin-top:2px;border-radius:2px}
+.act-btn:hover{background:#1a1a40;color:#ccc}
+.act-btn.danger:hover{background:#2a0a0a;color:#cc3333;border-color:#cc3333}
+.act-btn .act-result{font-size:6px;color:#555;display:block;margin-top:1px}
+.act-btn.ok{color:#00cc66;border-color:#00cc66}
+
+/* Hermes tasks */
+.hm-task{font-size:7px;padding:1px 0;color:#666;border-bottom:1px solid #111}
+.hm-task .t{color:#00cccc}
+
+/* Observer feed */
+#observer-feed{max-height:130px;overflow-y:auto}
+.obs-item{font-size:6px;padding:2px 0;border-bottom:1px solid #111;cursor:pointer}
+.obs-item:hover{background:#111122}
+.obs-item .os{color:#555;font-size:5px}
+.obs-item .ot{color:#888;display:block;line-height:1.3}
+.obs-item .osc{color:#00cc66;font-size:5px}
+.obs-item .osi{color:#8844cc;font-size:5px}
+
+/* Alerts */
+#alert-bar{max-height:60px;overflow-y:auto;border-top:1px solid #1a1a30;padding:2px 6px;font-size:7px;flex-shrink:0;background:#08080f}
+.al{padding:1px 0;display:flex;gap:4px}.al .ts{color:#444;flex-shrink:0}.al.w{color:#ccaa00}.al.c{color:#cc3333}.al.i{color:#00cccc}
+
+/* Webhook input */
+#webhook-url{width:100%;background:#0a0a14;border:1px solid #1a1a30;color:#888;font-family:inherit;font-size:7px;padding:2px 4px;border-radius:2px;margin-top:2px}
+#webhook-url:focus{outline:none;border-color:#00cccc;color:#ccc}
+#webhook-result{font-size:6px;color:#00cc66;margin-top:1px;word-break:break-all}
+
+#footer{display:flex;justify-content:space-between;padding:2px 6px;font-size:7px;color:#333;border-top:1px solid #1a1a30;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <div class="title">📱 PHONE SWARM</div>
+  <div class="g"><span class="l">RAM</span><span class="v" id="g-ram-v">--</span><div class="b"><div class="f" id="g-ram-b" style="width:0%"></div></div></div>
+  <div class="g"><span class="l">CPU</span><span class="v" id="g-cpu-v">--</span><div class="b"><div class="f cy" id="g-cpu-b" style="width:0%"></div></div></div>
+  <div class="g"><span class="l">DISK</span><span class="v" id="g-disk-v">--</span><div class="b"><div class="f pu" id="g-disk-b" style="width:0%"></div></div></div>
+  <div class="g"><span class="l">SWAP</span><span class="v" id="g-swap-v">--</span><div class="b"><div class="f ye" id="g-swap-b" style="width:0%"></div></div></div>
+  <span style="font-size:8px;color:#444;margin-left:auto" id="g-load">load --</span>
+</div>
+
+<div id="main">
+  <div id="procs">
+    <div class="ph">
+      <span class="p">PID</span><span class="n">PROCESS</span><span class="c">CPU%</span><span class="m">MEM%</span><span class="r">RSS</span>
+    </div>
+    <div id="proc-list"></div>
+  </div>
+  <div id="side">
+    <div class="st">System</div>
+    <div class="sr"><span class="k">RAM free</span><span class="v" id="s-ram-free">--</span></div>
+    <div class="sr"><span class="k">Swap</span><span class="v" id="s-swap">--</span></div>
+    <div class="sr"><span class="k">Disk free</span><span class="v" id="s-disk">--</span></div>
+    <div class="sr"><span class="k">Load 1/5/15</span><span class="v" id="s-load">--</span></div>
+    <div class="sr"><span class="k">Uptime</span><span class="v" id="s-up">--</span></div>
+
+    <div class="st">Hermes</div>
+    <div class="sr"><span class="k">Sessions</span><span class="v" id="s-hs">--</span></div>
+    <div class="sr"><span class="k">Recent 1h</span><span class="v" id="s-hr">--</span></div>
+    <div class="sr"><span class="k">Msgs today</span><span class="v" id="s-hm">--</span></div>
+    <div id="hermes-tasks"></div>
+
+    <div class="st">Observer 🔭</div>
+    <div class="sr"><span class="k">Problems</span><span class="v" id="s-obs-total">--</span></div>
+    <div id="observer-feed"></div>
+
+    <div class="st">Discord</div>
+    <div class="sr"><span class="k">Webhook</span><span class="v" id="s-webhook">--</span></div>
+    <input id="webhook-url" type="text" placeholder="Paste webhook URL...">
+    <div style="display:flex;gap:3px;margin-top:2px">
+      <button class="act-btn" onclick="setWebhook()" style="flex:1">⚡ Set</button>
+      <button class="act-btn" onclick="testAlert()" style="flex:1">🧪 Test</button>
+    </div>
+    <div id="webhook-result"></div>
+
+    <div class="st">Actions</div>
+    <button class="act-btn danger" onclick="action('clear-swap')">↻ Clear Swap<div class="act-result" id="act-swap"></div></button>
+    <button class="act-btn" onclick="action('restart-hermes')">↻ Restart Hermes<div class="act-result" id="act-hermes"></div></button>
+  </div>
+</div>
+
+<div id="chart-wrap"><canvas id="chart-canvas"></canvas></div>
+<div id="alert-bar"></div>
+<div id="footer">
+  <span id="footer-step">--</span>
+  <span id="footer-time">--</span>
+  <span id="footer-fps">--</span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// PHONE SWARM v2 Dashboard
+// ═══════════════════════════════════════════════════
+
+let STEP=0,HISTORY=[],ALERTS=[];
+
+function colorBar(el,pct){
+  el.style.width=Math.min(pct,100)+'%';
+  el.className='f '+(pct>90?'rd':pct>75?'ye':'gr');
+}
+
+async function poll(){
+  try{
+    let r=await fetch('/phone');
+    if(!r.ok)return;
+    let d=await r.json();
+    STEP++;
+    document.getElementById('footer-step').textContent='step '+STEP;
+    document.getElementById('footer-time').textContent=new Date().toLocaleTimeString();
+
+    // Gauges
+    colorBar(document.getElementById('g-ram-b'),d.ram_used_pct||0);
+    document.getElementById('g-ram-v').textContent=(d.ram_used_pct||0).toFixed(0)+'%';
+    document.getElementById('g-cpu-v').textContent=(d.cpu_pct||0).toFixed(0)+'%';
+    document.getElementById('g-cpu-b').style.width=Math.min((d.cpu_pct||0)/8,100)+'%';
+    colorBar(document.getElementById('g-disk-b'),d.storage_used_pct||0);
+    document.getElementById('g-disk-v').textContent=(d.storage_used_pct||0).toFixed(0)+'%';
+    document.getElementById('g-swap-v').textContent=(d.swap_used_pct||0).toFixed(0)+'%';
+    document.getElementById('g-swap-b').style.width=Math.min(d.swap_used_pct||0,100)+'%';
+    document.getElementById('g-load').textContent='load '+(d.load_1m||0);
+
+    // Side
+    document.getElementById('s-ram-free').textContent=(d.ram_free_mb||0).toFixed(0)+'M';
+    document.getElementById('s-swap').textContent=(d.swap_used_pct||0).toFixed(0)+'%';
+    document.getElementById('s-disk').textContent=(d.storage_avail_gb||0).toFixed(0)+'G';
+    document.getElementById('s-load').textContent=[d.load_1m,d.load_5m,d.load_15m].map(v=>(v||0).toFixed(1)).join('/');
+    document.getElementById('s-up').textContent=(d.uptime_hours||0).toFixed(0)+'h';
+
+    // Hermes
+    document.getElementById('s-hs').textContent=d.hermes_sessions||0;
+    document.getElementById('s-hr').textContent=d.hermes_recent||0;
+    document.getElementById('s-hm').textContent=d.hermes_messages_today||0;
+    let tasks=d.hermes_tasks||[];
+    document.getElementById('hermes-tasks').innerHTML=tasks.map(t=>
+      `<div class="hm-task"><span class="t">${t.when?.slice(11,16)||'--'}</span> ${t.title?.slice(0,25)||'?'}</div>`
+    ).join('');
+
+    // Processes
+    let procs=d.processes||[];
+    let maxCpu=procs[0]?.cpu||1;
+    document.getElementById('proc-list').innerHTML=procs.slice(0,40).map(p=>`
+      <div class="pr">
+        <span class="p" onclick="killPid(${p.pid})" title="Kill ${p.name}">${p.pid}</span>
+        <span class="n" title="${p.name}">${p.name.slice(0,40)}</span>
+        <span class="c" style="color:${p.cpu>50?'#cc3333':p.cpu>20?'#ccaa00':'#00cc66'}">${p.cpu.toFixed(1)}</span>
+        <span class="m">${p.mem.toFixed(1)}</span>
+        <span class="r">${p.rss>1024?(p.rss/1024).toFixed(0)+'M':p.rss+'K'}</span>
+      </div>`).join('');
+
+    // Alerts
+    if(d.alerts)for(let a of d.alerts){
+      let cls=a.level==='crit'?'c':a.level==='warn'?'w':'i';
+      ALERTS.unshift({cls,msg:a.msg,status:a.status});
+      if(ALERTS.length>50)ALERTS.length=50;
+    }
+    document.getElementById('alert-bar').innerHTML=ALERTS.slice(0,15).map(a=>
+      `<div class="al ${a.cls}"><span class="ts">${a.status||'--'}</span>${a.msg}</div>`
+    ).join('');
+
+    // History for chart
+    HISTORY.push({
+      t: new Date().toLocaleTimeString(),
+      ram: d.ram_used_pct||0,
+      swap: d.swap_used_pct||0,
+      load: d.load_1m||0,
+      cpu: d.cpu_pct||0
+    });
+    if(HISTORY.length>120)HISTORY=HISTORY.slice(-120);
+    drawChart();
+
+  }catch(e){}
+}
+
+// ── Chart ─────────────────────────────────────────
+function drawChart(){
+  let cv=document.getElementById('chart-canvas');
+  let w=cv.parentElement.clientWidth,h=cv.parentElement.clientHeight;
+  cv.width=w;cv.height=h;
+  let ctx=cv.getContext('2d');
+  if(!HISTORY.length)return;
+  ctx.clearRect(0,0,w,h);
+
+  let n=HISTORY.length;
+  let xStep=w/Math.max(n-1,1);
+
+  function line(vals,color,maxV){
+    ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=1;
+    for(let i=0;i<n;i++){
+      let x=xStep*i;
+      let y=h-(vals[i]/maxV*h*0.9)-5;
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+
+  line(HISTORY.map(d=>d.ram),'#00cc66',100);
+  line(HISTORY.map(d=>d.swap),'#ccaa00',100);
+  line(HISTORY.map(d=>d.load*10),'#cc3333',60);
+
+  // Legend
+  ctx.font='7px monospace';
+  ctx.fillStyle='#00cc66';ctx.fillText('RAM',4,10);
+  ctx.fillStyle='#ccaa00';ctx.fillText('SWAP',34,10);
+  ctx.fillStyle='#cc3333';ctx.fillText('LOADx10',64,10);
+}
+
+// ── Actions ────────────────────────────────────────
+async function action(cmd){
+  let el=document.getElementById('act-'+{swap:'swap','restart-hermes':'hermes'}[cmd]);
+  try{
+    let r=await fetch('/'+cmd);
+    let d=await r.json();
+    el.textContent=d.success?'OK: '+d.message:'FAIL: '+d.message;
+    el.style.color=d.success?'#0c0':'#c00';
+  }catch(e){
+    el.textContent='ERR: '+e.message;el.style.color='#c00';
+  }
+}
+
+async function killPid(pid){
+  if(!confirm('Kill PID '+pid+'?'))return;
+  try{
+    let r=await fetch('/kill/'+pid);
+    let d=await r.json();
+  }catch(e){}
+}
+
+// ── Webhook ────────────────────────────────────────
+async function checkWebhook(){
+  try{
+    let r=await fetch('/webhook');
+    let d=await r.json();
+    document.getElementById('s-webhook').textContent=d.configured?'✓ ON':'✗ OFF';
+    document.getElementById('s-webhook').style.color=d.configured?'#00cc66':'#cc3333';
+    if(d.url_preview){
+      document.getElementById('webhook-url').value='';
+      document.getElementById('webhook-url').placeholder=d.url_preview;
+    }
+  }catch(e){}
+}
+
+async function setWebhook(){
+  let url=document.getElementById('webhook-url').value.trim();
+  if(!url){document.getElementById('webhook-result').textContent='Paste a URL first';return;}
+  let res=document.getElementById('webhook-result');
+  try{
+    let r=await fetch('/webhook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    let d=await r.json();
+    res.textContent=d.ok?'✓ '+d.message:'✗ '+d.error;
+    res.style.color=d.ok?'#00cc66':'#cc3333';
+    if(d.ok)checkWebhook();
+  }catch(e){
+    res.textContent='✗ Connection error';
+    res.style.color='#cc3333';
+  }
+}
+
+async function testAlert(){
+  let res=document.getElementById('webhook-result');
+  try{
+    let r=await fetch('/alert-test',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    let d=await r.json();
+    res.textContent=d.ok?(d.sent?'✓ Alert sent to Discord':'⚠ Rate-limited'):'✗ '+d.error;
+    res.style.color=d.ok?'#00cc66':'#cc3333';
+  }catch(e){
+    res.textContent='✗ Connection error';
+    res.style.color='#cc3333';
+  }
+}
+
+// ── Observer ──────────────────────────────────────
+async function pollObserver(){
+  try{
+    let r=await fetch('/observer');
+    if(!r.ok)return;
+    let feed=await r.json();
+    document.getElementById('s-obs-total').textContent=feed.length;
+    document.getElementById('observer-feed').innerHTML=feed.slice(0,8).map(f=>`
+      <div class="obs-item" onclick="window.open('${f.url}','_blank')" title="${f.title}">
+        <span class="os">[${f.source}]</span>
+        <span class="osc">s:${f.solvability}</span>
+        <span class="osi">i:${f.impact}</span>
+        <span class="ot">${f.title.slice(0,60)}</span>
+      </div>`).join('');
+  }catch(e){}
+}
+
+// ── Boot ───────────────────────────────────────────
+checkWebhook();
+pollObserver();
+setInterval(poll,2000);
+setInterval(pollObserver,300000);
+poll();
+</script>
+</body>
+</html>
