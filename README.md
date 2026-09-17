@@ -19,8 +19,13 @@ Open to conversations with anyone building autonomous systems who needs a coordi
 ![Status: Active](https://img.shields.io/badge/Status-Active%20Build-brightgreen)
 ![GPU: RTX 4060](https://img.shields.io/badge/GPU-RTX%204060-76b900)
 ![Julia](https://img.shields.io/badge/Julia-1.12-9558B2)
+![Self-host: Free](https://img.shields.io/badge/Self--host-Free-0ea5e9)
+![AgentGuard: 0.2.1](https://img.shields.io/badge/AgentGuard-0.2.1-8b5cf6)
 
 ---
+
+
+**Self-host free forever** (`SLIMEFLOW_BILLING=0`). Quarantine real rogue agents → [Option D](#option-d--agent-guard-real-rogue-llm-agents). Looking for design partners → [issue #2](https://github.com/flipperspectives-crypto/slime-flow/issues/2). Support → [GitHub Sponsors](https://github.com/sponsors/flipperspectives-crypto) (pending approval).
 
 ## Live Demo
 
