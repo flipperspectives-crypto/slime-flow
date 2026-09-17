@@ -141,6 +141,10 @@ ay = CUDA.rand(Float32, N_AGENTS) .* H
 
 ### Option D — Agent guard (real rogue LLM agents)
 
+Income flywheel + prepaid metering: see [MONETIZE.md](MONETIZE.md).
+
+**$0 bootstrap:** [FREE_LAUNCH.md](FREE_LAUNCH.md) · [SPONSORS.md](SPONSORS.md) · [LAUNCH_POSTS.md](LAUNCH_POSTS.md)
+
 Same Veilpiercer threshold (0.6), but for live agents — not the pheromone sim.
 
 ```bash
