@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slimeflow"
+version = "0.1.0"
+description = "Python SDK for Slime Flow — biomimetic swarm intelligence coordination layer"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [{name = "On The Lolo", email = "flipperspectives@gmail.com"}]
+keywords = ["swarm", "biomimetic", "slime-mold", "cuda", "simulation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+[project.optional-dependencies]
+numpy = ["numpy>=1.21"]
+async = ["httpx>=0.25"]
+all = ["numpy>=1.21", "httpx>=0.25"]
+
+[project.urls]
+Homepage = "https://github.com/flipperspectives-crypto/slime-flow"
+Repository = "https://github.com/flipperspectives-crypto/slime-flow"
+Documentation = "https://github.com/flipperspectives-crypto/slime-flow/tree/main/python-sdk"

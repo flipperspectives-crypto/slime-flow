@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SLIME FLOW — Standalone</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: #020A05; color: #00FF88;
+  font-family: 'Courier New', monospace;
+  overflow: hidden; height: 100vh;
+  display: flex; flex-direction: column;
+}
+#topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px; height: 40px; background: #020A05;
+  border-bottom: 1px solid #003322; flex-shrink: 0;
+}
+#topbar .title { font-size: 13px; letter-spacing: 3px; color: #00FF88; font-weight: bold; }
+#topbar .title span { color: #CC00FF; }
+#main { display: flex; flex: 1; overflow: hidden; }
+#left {
+  width: 180px; flex-shrink: 0; background: #040F07;
+  border-right: 1px solid #003322; padding: 10px;
+  display: flex; flex-direction: column; gap: 10px; overflow-y: auto;
+}
+.pnl { font-size: 8px; letter-spacing: 2px; color: #007744; border-bottom: 1px solid #003322; padding-bottom: 4px; }
+.mr { display: flex; justify-content: space-between; font-size: 10px; }
+.ml { color: #447755; } .mv { color: #00FF88; font-weight: bold; }
+.mv.magenta { color: #CC00FF; } .mv.warn { color: #FFDD00; } .mv.danger { color: #FF3333; }
+.ad { display: flex; align-items: center; gap: 5px; font-size: 9px; color: #C8E8D0; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+button {
+  background: #071A0C; border: 1px solid #007744; color: #00FF88;
+  font-family: 'Courier New', monospace; font-size: 9px; letter-spacing: 1px;
+  padding: 5px 6px; cursor: pointer; width: 100%; text-align: left;
+  transition: background 0.1s;
+}
+button:hover { background: #0A2A14; border-color: #00FF88; }
+button.danger { border-color: #FF3333; color: #FF3333; }
+button.danger:hover { background: #2A0A0A; }
+button.magenta { border-color: #CC00FF; color: #CC00FF; }
+button.magenta:hover { background: #180030; }
+button.active { background: #003322; }
+#canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+#overlay { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+#right {
+  width: 200px; flex-shrink: 0; background: #040F07;
+  border-left: 1px solid #003322; padding: 10px;
+  display: flex; flex-direction: column; gap: 10px; overflow-y: auto;
+}
+#veil-eye { text-align: center; padding: 8px 0; }
+#veil-iris {
+  width: 44px; height: 44px; border-radius: 50%; border: 2px solid #CC00FF;
+  margin: 0 auto 4px; display: flex; align-items: center; justify-content: center;
+  font-size: 20px; transition: box-shadow 0.3s;
+}
+#veil-iris.active { box-shadow: 0 0 18px #CC00FF88; animation: pulse 2s infinite; }
+#veil-iris.off { border-color: #333; opacity: 0.4; }
+@keyframes pulse { 0%,100%{box-shadow:0 0 12px #CC00FF88} 50%{box-shadow:0 0 28px #CC00FFcc} }
+#veil-label { font-size: 8px; letter-spacing: 2px; color: #CC00FF; }
+#veil-label.off { color: #333; }
+.bar-wrap { margin-top: 2px; }
+.bar-bg { width:100%; height:4px; background:#071A0C; border-radius:2px; }
+.bar-fill { height:4px; border-radius:2px; transition:width 0.2s; }
+#log { flex:1; overflow-y:auto; font-size:8px; line-height:1.5; min-height:60px; max-height:160px; }
+.log-flow { color:#447755; } .log-rogue { color:#CC00FF; }
+.log-fault { color:#FF3333; } .log-quaran { color:#FFDD00; } .log-sys { color:#00CCFF; }
+#fps-d { font-size: 10px; color: #447755; }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <div class="title">SLIME FLOW <span>//</span> SENTINEL <span>//</span> VEILPIERCER</div>
+  <div id="fps-d">-- FPS</div>
+</div>
+<div id="main">
+  <div id="left">
+    <div class="pnl">SWARM</div>
+    <div class="mr"><span class="ml">STEP</span><span class="mv" id="s-step">0</span></div>
+    <div class="mr"><span class="ml">ALIVE</span><span class="mv" id="s-alive">512</span></div>
+    <div class="mr"><span class="ml">ROGUES</span><span class="mv magenta" id="s-rogues">0</span></div>
+    <div class="mr"><span class="ml">QUARANTINED</span><span class="mv warn" id="s-quaran">0</span></div>
+    <div class="mr"><span class="ml">FAULT</span><span class="mv" id="s-fault" style="color:#447755">CLEAR</span></div>
+
+    <div class="pnl">AGENTS</div>
+    <div class="ad"><div class="dot" style="background:#4488FF"></div>SCOUT<span style="margin-left:auto;color:#4488FF" id="c-scout">80</span></div>
+    <div class="ad"><div class="dot" style="background:#00FF88"></div>HARVESTER<span style="margin-left:auto;color:#00FF88" id="c-harv">200</span></div>
+    <div class="ad"><div class="dot" style="background:#FFDD00"></div>GUARDIAN<span style="margin-left:auto;color:#FFDD00" id="c-guard">60</span></div>
+    <div class="ad"><div class="dot" style="background:#FF8800"></div>EMERGENT<span style="margin-left:auto;color:#FF8800" id="c-emerg">80</span></div>
+    <div class="ad"><div class="dot" style="background:#CC00FF"></div>ROGUE<span style="margin-left:auto;color:#CC00FF" id="c-rogue">0</span></div>
+
+    <div class="pnl">CONTROLS</div>
+    <button class="magenta active" id="btn-veil" onclick="toggleVeil()">👁 VEIL ON</button>
+    <button class="magenta" onclick="spawnRogues()">☠ SPAWN ROGUES</button>
+    <button class="danger" onclick="injectFault()">⚡ FAULT INJECT</button>
+    <button onclick="clearFault()" style="border-color:#447755;color:#447755">✕ CLEAR FAULT</button>
+    <button onclick="resetSim()">↺ RESET</button>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="grid-canvas"></canvas>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <div id="right">
+    <div id="veil-eye">
+      <div id="veil-iris" class="active">👁</div>
+      <div id="veil-label">VEILPIERCER ACTIVE</div>
+    </div>
+    <div class="pnl">THREAT</div>
+    <div class="mr"><span class="ml">ANOMALY</span><span class="mv" id="s-anomaly">0.00</span></div>
+    <div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" id="bar-anomaly" style="background:linear-gradient(90deg,#007744,#FFDD00,#FF3333);width:0%"></div></div></div>
+    <div class="mr"><span class="ml">LEAK RISK</span><span class="mv danger" id="s-leak">0%</span></div>
+    <div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" id="bar-leak" style="background:#FF3333;width:0%"></div></div></div>
+    <div class="mr"><span class="ml">INTEGRITY</span><span class="mv" id="s-integrity">100%</span></div>
+    <div class="mr"><span class="ml">FPS</span><span class="mv" id="s-fps">--</span></div>
+    <div class="pnl">LOG</div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// SLIME FLOW — Pure JavaScript Simulation
+// Matches Julia CUDA kernel behavior: 512 agents, 128×128 grid
+// ══════════════════════════════════════════════════════════
+
+const W = 128, H = 128, N = 512;
+const DECAY = 0.97, DEPOSIT = 2.5, SENSE_R = 3.0, TURN_SPD = 0.35;
+const TYPE_COUNTS = [80, 200, 60, 80, 0]; // Scout, Harvester, Guardian, Emergent, Rogue
+const COLORS = {1:'#4488FF',2:'#00FF88',3:'#FFDD00',4:'#FF8800',5:'#CC00FF'};
+const SPEEDS = {1:2.2, 2:0.9, 3:1.4, 4:1.7, 5:2.0};
+const DEPS = {1:1.0, 2:3.0, 3:1.5, 4:2.0, 5:0.0};
+
+// State
+let pheromone = new Float32Array(W * H);
+let roguePher = new Float32Array(W * H);
+let ax = new Float32Array(N);
+let ay = new Float32Array(N);
+let adir = new Float32Array(N);
+let atype = new Int32Array(N);
+let anomaly = new Float32Array(N);
+let quarantined = new Int32Array(N);
+let step = 0;
+let veilOn = true;
+let faultActive = false, faultX = 0, faultY = 0;
+let faultRX = 0, faultRY = 0; // render coords
+
+function init() {
+  // Init with type distribution
+  let idx = 0;
+  for (let t = 0; t < 5; t++) {
+    for (let i = 0; i < TYPE_COUNTS[t]; i++) {
+      ax[idx] = Math.random() * W;
+      ay[idx] = Math.random() * H;
+      adir[idx] = Math.random() * Math.PI * 2;
+      atype[idx] = t + 1;
+      anomaly[idx] = 0;
+      quarantined[idx] = 0;
+      idx++;
+    }
+  }
+  // Fill remaining
+  while (idx < N) {
+    ax[idx] = Math.random() * W;
+    ay[idx] = Math.random() * H;
+    adir[idx] = Math.random() * Math.PI * 2;
+    atype[idx] = 2;
+    anomaly[idx] = 0;
+    quarantined[idx] = 0;
+    idx++;
+  }
+  pheromone.fill(0);
+  roguePher.fill(0);
+  step = 0;
+  faultActive = false;
+}
+init();
+
+function simStep() {
+  step++;
+  // Decay
+  for (let i = 0; i < W * H; i++) {
+    pheromone[i] *= DECAY;
+    roguePher[i] *= DECAY;
+  }
+  // Agent step
+  for (let i = 0; i < N; i++) {
+    if (quarantined[i] === 1) continue;
+    const t = atype[i];
+    let x = ax[i], y = ay[i], dir = adir[i];
+    const speed = SPEEDS[t] || 1.5;
+    const dep = DEPS[t] || 1.5;
+    const isRogue = t === 5;
+
+    // Fault zone kill (non-guardians)
+    if (faultActive && t !== 3) {
+      const dx = x - faultX, dy = y - faultY;
+      if (dx*dx + dy*dy < 400) { quarantined[i] = 2; continue; }
+    }
+
+    // Sense pheromone
+    let bestVal = -1, bestOff = 0;
+    for (const off of [-0.4, 0, 0.4]) {
+      const sd = dir + off;
+      const sx = ((Math.cos(sd) * SENSE_R + x) % W + W) % W;
+      const sy = ((Math.sin(sd) * SENSE_R + y) % H + H) % H;
+      const ix = Math.floor(sx), iy = Math.floor(sy);
+      const v = isRogue ? roguePher[iy * W + ix] : pheromone[iy * W + ix];
+      if (v > bestVal) { bestVal = v; bestOff = off; }
+    }
+
+    // Rogue chaotic movement
+    if (isRogue) {
+      bestOff = Math.sin(step * 0.3 + i) * 0.9;
+    }
+
+    dir += bestOff * (isRogue ? 0.9 : TURN_SPD) + Math.sin(step * 0.1 + i * 0.7) * 0.05;
+    x = ((x + Math.cos(dir) * speed) % W + W) % W;
+    y = ((y + Math.sin(dir) * speed) % H + H) % H;
+
+    // Deposit
+    const ix = Math.floor(x), iy = Math.floor(y);
+    if (isRogue) {
+      roguePher[iy * W + ix] += DEPOSIT * 2;
+      anomaly[i] = Math.min(anomaly[i] + 0.08, 1);
+    } else {
+      pheromone[iy * W + ix] += dep;
+      anomaly[i] = Math.max(anomaly[i] - 0.002, 0);
+    }
+
+    // Veilpiercer quarantine
+    if (anomaly[i] > 0.6 && isRogue) quarantined[i] = 1;
+
+    ax[i] = x; ay[i] = y; adir[i] = dir;
+  }
+}
+
+function countTypes() {
+  const c = {1:0,2:0,3:0,4:0,5:0};
+  let alive = 0, quaran = 0;
+  for (let i = 0; i < N; i++) {
+    if (quarantined[i] !== 2) { c[atype[i]]++; alive++; }
+    if (quarantined[i] === 1) quaran++;
+  }
+  return {c, alive, quaran};
+}
+
+// ── Canvas ──────────────────────────────────────────────────
+const gridCv = document.getElementById('grid-canvas');
+const ovCv = document.getElementById('overlay');
+const gctx = gridCv.getContext('2d');
+const octx = ovCv.getContext('2d');
+
+function resize() {
+  const wrap = document.getElementById('canvas-wrap');
+  gridCv.width = ovCv.width = wrap.clientWidth;
+  gridCv.height = ovCv.height = wrap.clientHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+function render() {
+  const cw = gridCv.width, ch = gridCv.height;
+  const imgData = gctx.createImageData(W, H);
+  const d = imgData.data;
+  for (let i = 0; i < W * H; i++) {
+    const v = pheromone[i];
+    const rv = veilOn ? roguePher[i] : 0;
+    const base = Math.min(v * 85, 255); // scale for visibility
+    const rv2 = Math.min(rv * 85, 255);
+    d[i*4]   = Math.min(base * 0.1 + rv2 * 0.8, 255);
+    d[i*4+1] = Math.min(base * 1.0, 255);
+    d[i*4+2] = Math.min(base * 0.2 + rv2 * 0.6, 255);
+    d[i*4+3] = Math.min(base * 3 + rv2 * 2 + 10, 255);
+  }
+  const offscreen = new OffscreenCanvas(W, H);
+  offscreen.getContext('2d').putImageData(imgData, 0, 0);
+  gctx.clearRect(0, 0, cw, ch);
+  gctx.save();
+  gctx.imageSmoothingEnabled = false;
+  gctx.drawImage(offscreen, 0, 0, cw, ch);
+  gctx.restore();
+
+  // Agents
+  octx.clearRect(0, 0, cw, ch);
+  for (let i = 0; i < N; i++) {
+    if (quarantined[i] === 2) continue;
+    const x = (ax[i] / W) * cw, y = (ay[i] / H) * ch;
+    const t = atype[i];
+    const r = t === 1 ? 2.5 : t === 2 ? 3.5 : 3;
+    const col = COLORS[t] || '#FFF';
+    if (quarantined[i] === 1) {
+      octx.strokeStyle = '#CC00FF'; octx.lineWidth = 1.5;
+      octx.beginPath(); octx.arc(x, y, r+3, 0, Math.PI*2); octx.stroke();
+      octx.strokeStyle = '#CC00FF88'; octx.lineWidth = 1;
+      octx.beginPath(); octx.moveTo(x-r, y-r); octx.lineTo(x+r, y+r); octx.stroke();
+      octx.beginPath(); octx.moveTo(x+r, y-r); octx.lineTo(x-r, y+r); octx.stroke();
+      continue;
+    }
+    if (t === 5 && anomaly[i] > 0.3) {
+      octx.beginPath(); octx.arc(x, y, r + anomaly[i]*8, 0, Math.PI*2);
+      octx.fillStyle = `rgba(204,0,255,${anomaly[i]*0.15})`; octx.fill();
+    }
+    octx.beginPath(); octx.arc(x, y, r, 0, Math.PI*2);
+    octx.fillStyle = col; octx.fill();
+  }
+  // Fault zone
+  if (faultActive) {
+    octx.beginPath();
+    octx.arc(faultRX * cw, faultRY * ch, Math.sqrt(400) * (cw/W), 0, Math.PI*2);
+    octx.strokeStyle = '#FF333388'; octx.lineWidth = 2; octx.setLineDash([4,4]); octx.stroke();
+    octx.setLineDash([]);
+  }
+}
+
+function updateUI() {
+  const {c, alive, quaran} = countTypes();
+  document.getElementById('s-step').textContent = step;
+  document.getElementById('s-alive').textContent = alive;
+  document.getElementById('s-rogues').textContent = c[5];
+  document.getElementById('s-quaran').textContent = quaran;
+  document.getElementById('s-fault').textContent = faultActive ? '⚡ ACTIVE' : 'CLEAR';
+  document.getElementById('s-fault').style.color = faultActive ? '#FF3333' : '#447755';
+  document.getElementById('c-scout').textContent = c[1];
+  document.getElementById('c-harv').textContent = c[2];
+  document.getElementById('c-guard').textContent = c[3];
+  document.getElementById('c-emerg').textContent = c[4];
+  document.getElementById('c-rogue').textContent = c[5];
+
+  // Anomaly
+  let totalAnomaly = 0;
+  for (let i = 0; i < N; i++) if (atype[i] === 5) totalAnomaly += anomaly[i];
+  const avgAnomaly = c[5] > 0 ? totalAnomaly / c[5] : 0;
+  document.getElementById('s-anomaly').textContent = avgAnomaly.toFixed(2);
+  document.getElementById('bar-anomaly').style.width = (avgAnomaly * 100) + '%';
+
+  // Leak / integrity
+  const leak = Math.min(c[5] * 3, 100);
+  const integrity = Math.max(100 - leak * 0.8, 0);
+  document.getElementById('s-leak').textContent = leak.toFixed(1) + '%';
+  document.getElementById('bar-leak').style.width = leak + '%';
+  document.getElementById('s-integrity').textContent = integrity.toFixed(0) + '%';
+}
+
+// ── Controls ────────────────────────────────────────────────
+function toggleVeil() {
+  veilOn = !veilOn;
+  const btn = document.getElementById('btn-veil');
+  btn.textContent = veilOn ? '👁 VEIL ON' : '👁 VEIL OFF';
+  btn.classList.toggle('active', veilOn);
+  const iris = document.getElementById('veil-iris');
+  iris.className = veilOn ? 'active' : 'off';
+  const lbl = document.getElementById('veil-label');
+  lbl.className = veilOn ? '' : 'off';
+  lbl.textContent = veilOn ? 'VEILPIERCER ACTIVE' : 'VEILPIERCER OFFLINE';
+  log(veilOn ? 'Veilpiercer reactivated' : 'Veilpiercer DISABLED — rogues undetected', veilOn ? 'sys' : 'fault');
+}
+
+function spawnRogues() {
+  let converted = 0;
+  for (let i = 0; i < N && converted < 12; i++) {
+    if (atype[i] !== 5 && quarantined[i] === 0) { atype[i] = 5; converted++; }
+  }
+  log('Rogue agents injected into swarm', 'rogue');
+}
+
+function injectFault() {
+  faultX = 40 + Math.random() * 48;
+  faultY = 40 + Math.random() * 48;
+  faultRX = faultX / W; faultRY = faultY / H;
+  faultActive = true;
+  log(`Fault zone injected at (${(faultRX*100).toFixed(0)}%, ${(faultRY*100).toFixed(0)}%)`, 'fault');
+}
+
+function clearFault() {
+  faultActive = false;
+  log('Fault zone cleared — swarm rerouting', 'flow');
+}
+
+function resetSim() {
+  init();
+  log('Simulation reset', 'sys');
+}
+
+function log(msg, type='flow') {
+  const el = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = `log-${type}`;
+  div.textContent = `[${String(step).padStart(5,'0')}] ${msg}`;
+  el.prepend(div);
+  if (el.children.length > 40) el.removeChild(el.lastChild);
+}
+
+// ── Main Loop ───────────────────────────────────────────────
+let fpsFrames = [], lastTime = performance.now();
+
+function loop() {
+  simStep();
+  render();
+  updateUI();
+
+  const now = performance.now();
+  fpsFrames.push(1000 / (now - lastTime));
+  lastTime = now;
+  if (fpsFrames.length > 20) fpsFrames.shift();
+  const fps = fpsFrames.reduce((a,b)=>a+b,0) / fpsFrames.length;
+  document.getElementById('fps-d').textContent = fps.toFixed(1) + ' FPS';
+  document.getElementById('s-fps').textContent = fps.toFixed(1);
+
+  requestAnimationFrame(loop);
+}
+
+log('Slime Flow JS engine initialized', 'sys');
+log('512 agents · 5 types · No GPU required', 'sys');
+loop();
+</script>
+</body>
+</html>
