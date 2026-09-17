@@ -26,6 +26,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Optional
 
 from slimeflow.agent_guard import guard
+from slimeflow.billing import billing
 
 # ═══════════════════════════════════════════════════════════════
 # Simulation Engine — matches slimeflow_standalone.html JS logic
@@ -261,6 +262,14 @@ class SlimeHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+
+    def _slime_key(self) -> str:
+        return (
+            self.headers.get("X-Slime-Key")
+            or self.headers.get("x-slime-key")
+            or ""
+        )
+
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -331,6 +340,20 @@ class SlimeHandler(BaseHTTPRequestHandler):
         if path == "/ping":
             return self._json({"status": "ok"})
 
+        if path == "/billing/pricing" or path == "/pricing":
+            return self._json(billing.pricing())
+
+        if path == "/billing/treasury":
+            return self._json({
+                "treasury_usd": billing.pricing()["treasury_usd"],
+                "flywheel": "surplus funds next agents after seat costs",
+            })
+
+        if path == "/billing/balance":
+            key = self._slime_key()
+            result = billing.balance(key)
+            return self._json(result, 200 if result.get("ok") else 401)
+
         if path == "/agents" or path == "/agents/status":
             return self._json(guard.status())
 
@@ -338,7 +361,12 @@ class SlimeHandler(BaseHTTPRequestHandler):
             agent_id = path[len("/agents/"):-len("/check")].strip("/")
             if not agent_id:
                 return self._json({"error": "missing agent id"}, 400)
-            return self._json(guard.check(agent_id))
+            charge = billing.charge(self._slime_key(), kind="check")
+            if not charge.get("allowed"):
+                return self._json(charge, 402)
+            out = guard.check(agent_id)
+            out["billing"] = charge
+            return self._json(out)
 
         self.send_response(404)
         self.end_headers()
@@ -361,6 +389,29 @@ class SlimeHandler(BaseHTTPRequestHandler):
             sim.inject_fault(x, y)
             return self._json({"status": "fault_injected", "x": x, "y": y})
 
+        if path == "/billing/create_key":
+            try:
+                data = json.loads(body or b"{}")
+            except json.JSONDecodeError:
+                data = {}
+            return self._json(
+                billing.create_key(
+                    label=str(data.get("label", "")),
+                    fleet_id=str(data.get("fleet_id", "default")),
+                    initial_usd=float(data.get("initial_usd", 0) or 0),
+                )
+            )
+
+        if path == "/billing/topup":
+            try:
+                data = json.loads(body or b"{}")
+            except json.JSONDecodeError:
+                return self._json({"error": "invalid JSON"}, 400)
+            key = self._slime_key() or str(data.get("secret", ""))
+            amount = float(data.get("amount_usd", data.get("amount", 0)) or 0)
+            result = billing.topup(key, amount)
+            return self._json(result, 200 if result.get("ok") else 400)
+
         if path == "/agents/report":
             try:
                 data = json.loads(body or b"{}")
@@ -369,6 +420,9 @@ class SlimeHandler(BaseHTTPRequestHandler):
             agent_id = str(data.get("agent_id", "")).strip()
             if not agent_id:
                 return self._json({"error": "agent_id required"}, 400)
+            charge = billing.charge(self._slime_key(), kind="report")
+            if not charge.get("allowed"):
+                return self._json(charge, 402)
             result = guard.report(
                 agent_id,
                 str(data.get("kind", "tool")),
@@ -380,6 +434,7 @@ class SlimeHandler(BaseHTTPRequestHandler):
             # Mirror into the pheromone sim so the dashboard shows pressure
             if result.get("quarantined"):
                 sim.spawn_rogues()
+            result["billing"] = charge
             return self._json(result)
 
         if path.startswith("/agents/") and path.endswith("/release"):
@@ -413,6 +468,7 @@ def main():
     print(f"  Listening: http://{args.host}:{args.port}")
     print(f"  Dashboard: http://{args.host}:{args.port}/")
     print(f"  Agent guard: http://{args.host}:{args.port}/agents")
+    print(f"  Billing:     http://{args.host}:{args.port}/billing/pricing")
     print(f"  Ctrl+C to stop")
 
     try:
