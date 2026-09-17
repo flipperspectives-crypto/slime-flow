@@ -42,6 +42,14 @@ curl -s -X POST http://127.0.0.1:8080/agents/report \
 
 Or: `python python-sdk/examples/paid_guard_demo.py`
 
+## Zero capital bootstrap
+
+You can sell **before** you spend:
+1. Self-host free (`SLIMEFLOW_BILLING=0` for demos).
+2. Enroll GitHub Sponsors — see [SPONSORS.md](SPONSORS.md) + [FREE_LAUNCH.md](FREE_LAUNCH.md).
+3. Design partners first, `$9` seats after proof.
+4. Do **not** fund SAP prepaid / trading until inbound cash exists.
+
 ## Next rails
 
 - Map `topup` → SAP `sap_payments_fund_prepaid` / x402 so credits settle on-chain.
