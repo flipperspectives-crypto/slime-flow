@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slimeflow"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python SDK for Slime Flow — biomimetic swarm intelligence coordination layer"
 readme = "README.md"
 license = {text = "MIT"}
