@@ -11,7 +11,7 @@ Usage::
     print(f"Step {frame.step}, {frame.rogue_count} rogues")
 
     # Async streaming
-    async for frame in sf.stream():
+    async for frame in sf.async_stream():
         print(frame.density())
 
     # Inject chaos
