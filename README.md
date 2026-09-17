@@ -1,3 +1,5 @@
+[![Sponsor](https://img.shields.io/badge/Sponsor-❤%20flipperspectives-2ecc71)](https://github.com/sponsors/flipperspectives-crypto)
+
 # SLIME FLOW // SENTINEL // VEILPIERCER
 🧫 I built a swarm brain for autonomous machines — powered by a GPU, inspired by slime mold.
 No central controller. No cloud. No single point of failure.
