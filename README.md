@@ -137,6 +137,39 @@ ay = CUDA.rand(Float32, N_AGENTS) .* H
 
 ---
 
+
+
+### Option D — Agent guard (real rogue LLM agents)
+
+Same Veilpiercer threshold (0.6), but for live agents — not the pheromone sim.
+
+```bash
+pip install -e python-sdk/
+python -m slimeflow.server --host 127.0.0.1 --port 8080
+python python-sdk/examples/rogue_agent_demo.py
+```
+
+In-process gate before high-impact tools:
+
+```python
+from slimeflow import guard
+
+gate = guard.check("my-bot")
+if not gate["allowed"]:
+    raise RuntimeError(gate["reason"])
+
+result = guard.report(
+    "my-bot",
+    "send",
+    tool="gmail.send",
+    detail="outreach blast",
+    user_confirmed=False,  # will quarantine fast
+)
+```
+
+HTTP: `GET /agents`, `POST /agents/report`, `GET /agents/{id}/check`,
+`POST /agents/{id}/release`, `POST /agents/{id}/quarantine`.
+
 ## Roadmap
 
 - [x] GPU pheromone simulation (Julia + CUDA)
