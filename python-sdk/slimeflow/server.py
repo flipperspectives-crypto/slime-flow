@@ -25,6 +25,8 @@ import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Optional
 
+from slimeflow.agent_guard import guard
+
 # ═══════════════════════════════════════════════════════════════
 # Simulation Engine — matches slimeflow_standalone.html JS logic
 # ═══════════════════════════════════════════════════════════════
@@ -329,6 +331,15 @@ class SlimeHandler(BaseHTTPRequestHandler):
         if path == "/ping":
             return self._json({"status": "ok"})
 
+        if path == "/agents" or path == "/agents/status":
+            return self._json(guard.status())
+
+        if path.startswith("/agents/") and path.endswith("/check"):
+            agent_id = path[len("/agents/"):-len("/check")].strip("/")
+            if not agent_id:
+                return self._json({"error": "missing agent id"}, 400)
+            return self._json(guard.check(agent_id))
+
         self.send_response(404)
         self.end_headers()
         self.wfile.write(b'{"error": "not found"}')
@@ -350,6 +361,39 @@ class SlimeHandler(BaseHTTPRequestHandler):
             sim.inject_fault(x, y)
             return self._json({"status": "fault_injected", "x": x, "y": y})
 
+        if path == "/agents/report":
+            try:
+                data = json.loads(body or b"{}")
+            except json.JSONDecodeError:
+                return self._json({"error": "invalid JSON"}, 400)
+            agent_id = str(data.get("agent_id", "")).strip()
+            if not agent_id:
+                return self._json({"error": "agent_id required"}, 400)
+            result = guard.report(
+                agent_id,
+                str(data.get("kind", "tool")),
+                tool=str(data.get("tool", "")),
+                detail=str(data.get("detail", "")),
+                user_confirmed=bool(data.get("user_confirmed", False)),
+                payload=str(data.get("payload", "")),
+            )
+            # Mirror into the pheromone sim so the dashboard shows pressure
+            if result.get("quarantined"):
+                sim.spawn_rogues()
+            return self._json(result)
+
+        if path.startswith("/agents/") and path.endswith("/release"):
+            agent_id = path[len("/agents/"):-len("/release")].strip("/")
+            return self._json(guard.release(agent_id))
+
+        if path.startswith("/agents/") and path.endswith("/quarantine"):
+            agent_id = path[len("/agents/"):-len("/quarantine")].strip("/")
+            try:
+                data = json.loads(body or b"{}")
+            except json.JSONDecodeError:
+                data = {}
+            return self._json(guard.quarantine(agent_id, str(data.get("reason", "manual"))))
+
         self.send_response(404)
         self.end_headers()
         self.wfile.write(b'{"error": "not found"}')
@@ -368,6 +412,7 @@ def main():
     print(f"  GPU: Pure Python CPU (phone-ready)")
     print(f"  Listening: http://{args.host}:{args.port}")
     print(f"  Dashboard: http://{args.host}:{args.port}/")
+    print(f"  Agent guard: http://{args.host}:{args.port}/agents")
     print(f"  Ctrl+C to stop")
 
     try:
