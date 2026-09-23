@@ -12,7 +12,7 @@ Free-lane release checklist; publish only the verified artifacts below.
   test -n "${PYPI_API_TOKEN:-}" || { echo "PYPI_API_TOKEN is not set" >&2; exit 1; }
   ```
 
-- [ ] Run the check and confirm it passes:
+- [x] Verified before publishing: `twine check` PASSED. Re-run it before upload and confirm it still passes:
 
   ```bash
   python -m twine check dist/slimeflow-0.2.1*
