@@ -237,5 +237,7 @@ MIT — see [LICENSE](LICENSE)
 
 ## Built By
 
+Built by Lauren Flipo.
+
 **On The Lolo** — AI Infrastructure  
 flipperspectives@gmail.com
