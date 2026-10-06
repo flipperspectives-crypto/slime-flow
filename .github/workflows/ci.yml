@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install SDK + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "python-sdk/[all]" pytest
+      - name: Run tests
+        working-directory: python-sdk
+        run: python -m pytest -q
+      - name: README quickstart smoke test
+        run: |
+          python - <<'PY'
+          from slimeflow import guard
+          assert guard.check("ci-bot")["allowed"]
+          r = None
+          for _ in range(2):
+              r = guard.report("ci-bot", "send", tool="gmail.send", detail="ci", user_confirmed=False)
+          assert r["quarantined"], r
+          print("quarantined as expected:", r["reason"], r["anomaly"])
+          PY
+
+  pypi-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install published package from PyPI
+        run: pip install slimeflow
+      - name: Import check
+        run: python -c "import slimeflow; print(slimeflow.__version__)"
