@@ -1,31 +1,49 @@
-[![Sponsor](https://img.shields.io/badge/Sponsor-❤%20flipperspectives-2ecc71)](https://github.com/sponsors/flipperspectives-crypto)
+# Slime Flow · AgentGuard
 
-# SLIME FLOW // SENTINEL // VEILPIERCER
-🧫 I built a swarm brain for autonomous machines — powered by a GPU, inspired by slime mold.
-No central controller. No cloud. No single point of failure.
-It's called Slime Flow. Here's what it does:
-→ 512 agents coordinate using pheromone trails — no instructions, no map, no leader
-→ Fault zones appear — the swarm reroutes in milliseconds
-→ Rogue agents infiltrate — Veilpiercer detects them, scores their anomaly, quarantines them live
-→ All of it running on an RTX 4060, streamed to the browser in real time
-The same logic slime mold has used for 500 million years. Applied to drones, robots, and AI agent networks.
-Demo: https://youtu.be/UiYcXbyOEvQ
-Repo: https://github.com/flipperspectives-crypto/slime-flow
-Open to conversations with anyone building autonomous systems who needs a coordination layer that actually survives chaos.
-#swarmAI #autonomoussystems #biomimetic #drones #robotics #AIinfrastructure #Julia #CUDA
-> Biomimetic swarm intelligence for autonomous machines — no central controller, no cloud, no surveillance.
-
+![CI](https://github.com/flipperspectives-crypto/slime-flow/actions/workflows/ci.yml/badge.svg)
+[![PyPI](https://img.shields.io/pypi/v/slimeflow)](https://pypi.org/project/slimeflow/)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Status: Active](https://img.shields.io/badge/Status-Active%20Build-brightgreen)
-![GPU: RTX 4060](https://img.shields.io/badge/GPU-RTX%204060-76b900)
-![Julia](https://img.shields.io/badge/Julia-1.12-9558B2)
 ![Self-host: Free](https://img.shields.io/badge/Self--host-Free-0ea5e9)
-![AgentGuard: 0.2.1](https://img.shields.io/badge/AgentGuard-0.2.1-8b5cf6)
+
+**AgentGuard stops an LLM agent before it sends, deletes, or pays without a human OK.**
+It scores every action your agent takes. Unconfirmed send/delete/pay calls, secret-shaped payloads, and repeat loops raise an anomaly score. At 0.6 the agent is quarantined until a human releases it. It runs outside the agent's prompt, so a prompt-injected or looping agent can't talk its way past it.
+
+(Not to be confused with other projects named "AgentGuard". This one ships on PyPI as `slimeflow`.)
+
+## 60-second quickstart
+
+```bash
+pip install slimeflow
+```
+
+```python
+from slimeflow import guard
+
+def before_tool(agent_id, kind, tool, detail, user_confirmed):
+    gate = guard.check(agent_id)
+    if not gate["allowed"]:
+        raise RuntimeError(f"{agent_id} is quarantined: {gate['reason']}")
+    r = guard.report(agent_id, kind, tool=tool, detail=detail, user_confirmed=user_confirmed)
+    if not r["allowed"]:
+        raise RuntimeError(f"blocked: {r['reason']} (anomaly {r['anomaly']})")
+
+before_tool("mail-bot", "send", "gmail.send", "follow-up", user_confirmed=False)  # anomaly 0.4, allowed
+before_tool("mail-bot", "send", "gmail.send", "follow-up", user_confirmed=False)  # 0.8 -> quarantined, raises
+```
+
+Action kinds: `message`, `tool`, `file_write`, `network`, `code_exec`, `browser_auth`, `send`, `delete`, `pay`, `credential`, `loop`, `ignore_stop`.
+The in-process guard keeps state in memory. For several agents or processes, run the HTTP server (`python -m slimeflow.server`, see [Option D](#option-d--agent-guard-real-rogue-llm-agents)).
+
+**Design partners wanted:** run it in front of one real agent for 14 days, share anonymized quarantine logs, and get free setup help. Reply on [issue #2](https://github.com/flipperspectives-crypto/slime-flow/issues/2).
 
 ---
 
+## The swarm sim behind it
 
-**Self-host free forever** (`SLIMEFLOW_BILLING=0`). Quarantine real rogue agents → [Option D](#option-d--agent-guard-real-rogue-llm-agents). Looking for design partners → [issue #2](https://github.com/flipperspectives-crypto/slime-flow/issues/2). Support → [GitHub Sponsors](https://github.com/sponsors/flipperspectives-crypto) (pending approval).
+AgentGuard reuses the Veilpiercer threshold from Slime Flow, a GPU slime-mold swarm simulation (Julia + CUDA, 512 agents, no central controller). The rest of this README covers the sim.
+
+![GPU: RTX 4060](https://img.shields.io/badge/GPU-RTX%204060-76b900)
+![Julia](https://img.shields.io/badge/Julia-1.12-9558B2)
 
 ## Live Demo
 
@@ -59,7 +77,7 @@ No cloud dependency. No central server. Runs fully offline on edge hardware.
 
 ### Option A — Browser only (no install)
 
-Open `slimeflow_veilpiercer.html` directly in any browser.
+Open `slimeflow_standalone.html` directly in any browser.
 
 | Button | Action |
 |---|---|
@@ -80,7 +98,7 @@ Then open `slimeflow_live.html` in Chrome. Connects to `localhost:8080` and rend
 ### Option C — Python SDK
 
 ```bash
-pip install -e python-sdk/
+pip install slimeflow          # or, from a clone: pip install -e python-sdk/
 ```
 
 ```python
@@ -146,14 +164,10 @@ ay = CUDA.rand(Float32, N_AGENTS) .* H
 
 ### Option D — Agent guard (real rogue LLM agents)
 
-Income flywheel + prepaid metering: see [MONETIZE.md](MONETIZE.md).
-
-**$0 bootstrap:** [FREE_LAUNCH.md](FREE_LAUNCH.md) · [SPONSORS.md](SPONSORS.md) · [LAUNCH_POSTS.md](LAUNCH_POSTS.md)
-
 Same Veilpiercer threshold (0.6), but for live agents — not the pheromone sim.
 
 ```bash
-pip install -e python-sdk/
+pip install slimeflow
 python -m slimeflow.server --host 127.0.0.1 --port 8080
 python python-sdk/examples/rogue_agent_demo.py
 ```
