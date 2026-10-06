@@ -1,16 +1,49 @@
 # Slime Flow Python SDK
 
-Python client for the [Slime Flow](https://github.com/flipperspectives-crypto/slime-flow) GPU swarm simulation server.
+Two things ship in this package:
+
+- **AgentGuard**: scores the actions an LLM agent's harness reports and quarantines the agent when the score reaches 0.6. Runs in-process or as an HTTP server.
+- **Sim client**: a client for the [Slime Flow](https://github.com/flipperspectives-crypto/slime-flow) swarm simulation server (Julia/CUDA `server.jl` or the pure Python `python -m slimeflow.server`).
+
+Built by Lauren Flipo.
 
 ## Install
 
 ```bash
-pip install -e python-sdk/        # from repo root
-# or with async + numpy support:
+pip install slimeflow
+# from a clone, with async + numpy support:
 pip install -e "python-sdk/[all]"
 ```
 
-## Quick Start
+## AgentGuard
+
+```python
+from slimeflow import AgentGuard
+
+guard = AgentGuard()  # AgentGuard(state_path="guard_state.json") keeps quarantines across restarts
+
+def before_tool(agent_id, kind, tool, detail, user_confirmed):
+    r = guard.report(agent_id, kind, tool=tool, detail=detail, user_confirmed=user_confirmed)
+    if not r["allowed"]:
+        raise RuntimeError(f"blocked: {r['reason']} (anomaly {r['anomaly']})")
+
+before_tool("ops-bot", "delete", "rm", "/tmp/build", user_confirmed=False)  # 0.38, allowed
+before_tool("ops-bot", "delete", "rm", "/srv/data", user_confirmed=False)   # 0.76, quarantined
+
+guard.release("ops-bot", by="lauren", note="reviewed")  # a human unfreezes it
+```
+
+Call `report()` before running the action and run it only when `allowed` is true. With the defaults:
+
+- The first unconfirmed delete goes through (0.38); a second one 80 s or less later freezes the agent until `release()`.
+- Unconfirmed shell commands (`code_exec`) score 0.30 each: two are allowed, and the third freezes the agent if the first and third are 150 s or less apart.
+- The guard only sees what the harness reports, trusts the harness for `kind` and `user_confirmed`, and does not count money.
+
+Full rules and limits are in the [main README](https://github.com/flipperspectives-crypto/slime-flow#how-scoring-works) and the `slimeflow.agent_guard` docstring.
+
+## Sim client
+
+### Quick Start
 
 ```python
 from slimeflow import SlimeFlow
@@ -36,7 +69,7 @@ for frame in sf.stream(max_frames=100):
         sf.clear_fault()
 ```
 
-## API
+### API
 
 | Method | Description |
 |---|---|
@@ -50,13 +83,13 @@ for frame in sf.stream(max_frames=100):
 | `sf.stream(interval, max_frames)` → `Iterator[Frame]` | Blocking frame stream |
 | `await sf.async_stream(...)` → `AsyncIterator[Frame]` | Async frame stream |
 
-## Frame Object
+### Frame Object
 
 ```python
 frame.step          # int — simulation step
 frame.grid_w        # int — grid width (64)
 frame.grid_h        # int — grid height (64)
-frame.pheromone     # list[float] — pheromone grid (0–1)
+frame.pheromone     # list[float] — pheromone grid, scaled to 0–1 by the server
 frame.rogue_pheromone  # list[float] — rogue pheromone grid
 frame.agents        # list[Agent] — all 512 agents
 frame.rogue_count   # int
@@ -75,7 +108,7 @@ frame.grid_np()     # np.array (requires numpy)
 frame.agents_np()   # dict of np arrays (requires numpy)
 ```
 
-## Agent Object
+### Agent Object
 
 ```python
 ag.x, ag.y          # float — normalized position (0–1)
@@ -89,7 +122,7 @@ ag.is_dead          # bool
 ag.is_active        # bool
 ```
 
-## Examples
+### Examples
 
 ```bash
 # Check server + get frame
@@ -107,4 +140,4 @@ python examples/async_example.py chaos
 - Python 3.9+
 - Optional: `numpy` for array operations
 - Optional: `httpx` for async client
-- Running [Slime Flow server](https://github.com/flipperspectives-crypto/slime-flow) (`julia server.jl`)
+- For the sim client: a running server, either `julia server.jl` (GPU) or `python -m slimeflow.server` (CPU)

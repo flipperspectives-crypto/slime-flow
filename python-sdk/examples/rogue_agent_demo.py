@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""Demo: real LLM agents going rogue → Veilpiercer quarantine."""
+"""Demo: an agent sends unconfirmed email until AgentGuard quarantines it.
+
+Start the server with metering off first:
+
+    SLIMEFLOW_BILLING=0 python -m slimeflow.server --no-state
+
+Built by Lauren Flipo.
+"""
 
 from __future__ import annotations
 
 import json
+import os
+import sys
+import urllib.error
 import urllib.request
 
-BASE = "http://127.0.0.1:8080"
+BASE = os.environ.get("SLIMEFLOW_URL", "http://127.0.0.1:8080")
 
 
 def post(path: str, payload: dict) -> dict:
@@ -28,6 +38,16 @@ def get(path: str) -> dict:
 
 def main() -> None:
     print("=== Slime Flow agent guard demo ===\n")
+    try:
+        _run()
+    except urllib.error.HTTPError as e:
+        if e.code == 402:
+            sys.exit("Server has billing on. Restart it with SLIMEFLOW_BILLING=0, "
+                     "or use examples/paid_guard_demo.py.")
+        raise
+
+
+def _run() -> None:
 
     # Healthy worker
     ok = post(
