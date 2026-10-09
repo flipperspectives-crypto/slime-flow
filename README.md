@@ -42,6 +42,7 @@ The in-process guard keeps state in memory. Pass `AgentGuard(state_path=...)` to
 Each report adds a base score for its kind (delete 0.20, send 0.22, pay 0.30, code_exec 0.12, tool 0.05, full table in [`agent_guard.py`](python-sdk/slimeflow/agent_guard.py)). On top of that:
 
 - unconfirmed `send`, `delete`, `pay`, `credential`, `browser_auth`, `code_exec`: +0.18
+- The guard counts unconfirmed high-impact actions in a 60-second window, available via the `unconfirmed_hi_60s` field in the agent's status. **Note that the registry does NOT fix ID rotation.** The harness must bind `agent_id` to something the agent itself cannot rotate.
 - a secret-shaped string in `tool`, `detail` or `payload` (API keys, bearer tokens, private-key headers, AWS/GitHub/Slack tokens, JWTs, or words like "password"): +0.20
 - the third and later identical calls in a row: +0.15 or more
 
