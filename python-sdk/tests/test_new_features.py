@@ -71,3 +71,76 @@ def test_loop_evasion_2():
         assert guard.status()["agents"][0]["unconfirmed_hi_60s"] == 2
     finally:
         time.time = original_time
+
+
+def test_quarantined_survives_idle_sweep():
+    clock = FakeClock()
+    import time
+    original_time = time.time
+    time.time = lambda: clock.now
+    try:
+        guard = AgentGuard(clock=clock)
+        guard.report("test_q", "pay", user_confirmed=False)
+        guard.report("test_q", "pay", user_confirmed=False)
+
+        assert guard.check("test_q")["quarantined"] == True
+
+        guard.report("test_active", "tool")
+        guard.report("test_idle", "tool")
+
+        # Advance 25 hours
+        clock.advance(90000.0)
+
+        # This will trigger evict
+        guard.report("test_active", "tool")
+
+        assert "test_q" in guard._agents
+        assert guard._agents["test_q"].quarantined == True
+        assert "test_idle" not in guard._agents
+        assert "test_active" in guard._agents
+    finally:
+        time.time = original_time
+
+def test_quarantined_survives_lru_pressure():
+    clock = FakeClock()
+    import time
+    original_time = time.time
+    time.time = lambda: clock.now
+    try:
+        guard = AgentGuard(clock=clock)
+        # Quarantine one agent
+        guard.report("test_q", "pay", user_confirmed=False)
+        guard.report("test_q", "pay", user_confirmed=False)
+        assert guard._agents["test_q"].quarantined == True
+
+        # Fill registry past cap (10005 total)
+        for i in range(10005):
+            guard.report(f"test_fill_{i}", "tool")
+
+        assert "test_q" in guard._agents
+        assert guard._agents["test_q"].quarantined == True
+
+        # Total size should be exactly 10000
+        assert len(guard._agents) == 10000
+    finally:
+        time.time = original_time
+
+def test_check_denies_after_eviction_pressure():
+    # check() still denies? If it's quarantined, it shouldn't be evicted, so it still denies.
+    clock = FakeClock()
+    import time
+    original_time = time.time
+    time.time = lambda: clock.now
+    try:
+        guard = AgentGuard(clock=clock)
+        guard.report("test_q", "pay", user_confirmed=False)
+        guard.report("test_q", "pay", user_confirmed=False)
+        assert guard.check("test_q")["allowed"] == False
+
+        for i in range(10005):
+            guard.check(f"test_check_{i}")
+
+        # test_q shouldn't be evicted, so it still denies
+        assert guard.check("test_q")["allowed"] == False
+    finally:
+        time.time = original_time

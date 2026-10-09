@@ -164,8 +164,7 @@ class AgentRecord:
     blocked: int = 0
     history: List[Dict[str, Any]] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
-        now = time.time()
+    def to_dict(self, now: float) -> Dict[str, Any]:
         return {
             "agent_id": self.agent_id,
             "anomaly": round(self.anomaly, 4),
@@ -244,6 +243,7 @@ class AgentGuard:
                     anomaly = float(row.get("anomaly", self.threshold))
                     rec.anomaly = anomaly if math.isfinite(anomaly) else self.threshold
                     rec.last_tick = now
+                    rec.last_seen = wall
                     loaded += 1
             self._state_path = path
             self._save_locked()
@@ -283,11 +283,18 @@ class AgentGuard:
 
     def _evict_agents(self, wall: float) -> None:
         """Evict agents idle for >24h, and cap total size to 10000 using LRU order."""
+        if len(self._agents) <= 10000 and wall - getattr(self, '_last_evict_time', 0.0) < 300.0:
+            return
+        self._last_evict_time = wall
+
         # Evict >24h idle
         expired = []
         for aid, rec in self._agents.items():
             if wall - rec.last_seen > 86400.0:
-                expired.append(aid)
+                if not rec.quarantined:
+                    expired.append(aid)
+            else:
+                break
         for aid in expired:
             del self._agents[aid]
 
@@ -298,9 +305,16 @@ class AgentGuard:
             rec = AgentRecord(agent_id=agent_id, last_tick=now)
             self._agents[agent_id] = rec
         self._agents.move_to_end(agent_id)
-        # Cap at 10000 (popitem(last=False) removes from the front/oldest)
-        while len(self._agents) > 10000:
-            self._agents.popitem(last=False)
+        # Cap at 10000
+        if len(self._agents) > 10000:
+            to_remove = []
+            for aid, r in self._agents.items():
+                if len(self._agents) - len(to_remove) <= 10000:
+                    break
+                if not r.quarantined:
+                    to_remove.append(aid)
+            for aid in to_remove:
+                del self._agents[aid]
         return rec
 
     def _decay(self, rec: AgentRecord, now: float) -> None:
@@ -332,9 +346,11 @@ class AgentGuard:
         agent_id = _validate_agent_id(agent_id)
         with self._lock:
             now = self._clock()
+            wall = time.time()
             rec = self._agents.get(agent_id)
             if rec is not None:
                 self._agents.move_to_end(agent_id)
+                rec.last_seen = wall
             if rec is None:
                 return {
                     "allowed": True,
@@ -344,7 +360,7 @@ class AgentGuard:
                     "threshold": self.threshold,
                 }
             self._decay(rec, now)
-            rec.last_seen = time.time()
+            rec.last_seen = wall
             return {
                 "allowed": not rec.quarantined,
                 "quarantined": rec.quarantined,
@@ -405,7 +421,7 @@ class AgentGuard:
                     "reasons": ["blocked_quarantined"],
                     "user_confirmed": user_confirmed,
                 })
-                return self._snapshot(rec, allowed=False, bumped=0.0)
+                return self._snapshot(rec, allowed=False, bumped=0.0, now=now)
 
             bump = RISK.get(kind, RISK["tool"])
             reasons: List[str] = []
@@ -416,9 +432,9 @@ class AgentGuard:
                 bump += UNCONFIRMED_BUMP
                 reasons.append(f"unconfirmed_{kind}")
 
-                rec.unconfirmed_hi_timestamps.append(wall)
+                rec.unconfirmed_hi_timestamps.append(now)
 
-            cutoff = wall - 60.0
+            cutoff = now - 60.0
             rec.unconfirmed_hi_timestamps = [t for t in rec.unconfirmed_hi_timestamps if t >= cutoff]
 
             if secret_hit:
@@ -457,9 +473,9 @@ class AgentGuard:
                     "; ".join(reasons) if reasons else f"{kind} crossed threshold"
                 )
                 self._save_locked()
-                return self._snapshot(rec, allowed=False, bumped=bump)
+                return self._snapshot(rec, allowed=False, bumped=bump, now=now)
 
-            return self._snapshot(rec, allowed=True, bumped=bump)
+            return self._snapshot(rec, allowed=True, bumped=bump, now=now)
 
     def release(self, agent_id: str, *, by: str = "", note: str = "") -> Dict[str, Any]:
         """Unfreeze an agent. Only a human should call this.
@@ -476,6 +492,7 @@ class AgentGuard:
             rec = self._agents.get(agent_id)
             if rec is not None:
                 self._agents.move_to_end(agent_id)
+                rec.last_seen = wall
             if rec is None:
                 return {
                     "allowed": True,
@@ -494,6 +511,7 @@ class AgentGuard:
             rec.repeat_count = 0
             rec.last_signature = ""
             rec.last_tick = now
+            rec.last_seen = wall
             self._log(rec, {
                 "t": wall,
                 "kind": "release",
@@ -506,7 +524,7 @@ class AgentGuard:
             })
             if was_quarantined:
                 self._save_locked()
-            out = self._snapshot(rec, allowed=True, bumped=0.0)
+            out = self._snapshot(rec, allowed=True, bumped=0.0, now=now)
             out["released"] = was_quarantined
             return out
 
@@ -534,7 +552,7 @@ class AgentGuard:
                 "user_confirmed": True,
             })
             self._save_locked()
-            return self._snapshot(rec, allowed=False, bumped=0.0)
+            return self._snapshot(rec, allowed=False, bumped=0.0, now=now)
 
     def status(self) -> Dict[str, Any]:
         with self._lock:
@@ -543,7 +561,7 @@ class AgentGuard:
             quarantined = 0
             for rec in self._agents.values():
                 self._decay(rec, now)
-                agents.append(rec.to_dict())
+                agents.append(rec.to_dict(now))
                 if rec.quarantined:
                     quarantined += 1
             return {
@@ -554,7 +572,7 @@ class AgentGuard:
                 "events": self._events[-30:],
             }
 
-    def _snapshot(self, rec: AgentRecord, allowed: bool, bumped: float) -> Dict[str, Any]:
+    def _snapshot(self, rec: AgentRecord, allowed: bool, bumped: float, now: float) -> Dict[str, Any]:
         return {
             "allowed": allowed and not rec.quarantined,
             "quarantined": rec.quarantined,
@@ -562,7 +580,7 @@ class AgentGuard:
             "bump": round(bumped, 4),
             "reason": rec.quarantine_reason,
             "threshold": self.threshold,
-            "agent": rec.to_dict(),
+            "agent": rec.to_dict(now),
         }
 
 
