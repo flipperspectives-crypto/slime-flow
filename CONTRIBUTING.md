@@ -1,30 +1,28 @@
 # Contributing to Slime Flow
 
-This demo project welcomes contributions! Here's how you can help:
+Slime Flow is built by Lauren Flipo. Pull requests are welcome.
 
-## Getting Started
-1. Fork the repository
-2. Clone your fork locally
-3. Create a new branch for your feature
-4. Make your changes
-5. Test your changes
-6. Submit a pull request
+## Setup
 
-## Code Style
-- Use consistent indentation (2 spaces)
-- Write clear, descriptive commit messages
-- Add comments for complex logic
-- Follow the existing code structure
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -e "python-sdk/[all]" pytest ruff
+```
 
-## Testing
-Before submitting a pull request:
-1. Run the test suite: `npm test`
-2. Test the main demo: `npm start`
-3. Ensure all functionality works as expected
+## Before you open a pull request
 
-## Bug Reports
-Include:
-- Clear description of the issue
-- Steps to reproduce
-- Expected vs actual behavior
-- Your environment details
+```bash
+cd python-sdk
+ruff check .
+python -m pytest -q
+```
+
+CI runs the test suite on Python 3.9 to 3.13.
+
+The tests in `tests/test_agent_guard.py` pin AgentGuard's documented behavior (scores, thresholds, when an agent freezes). If you change scoring, update the tests, the README "How scoring works" section, and the `agent_guard.py` docstring in the same pull request.
+
+The live sim tests in `tests/test_client.py` are skipped unless a server is running on localhost:8080 (`python -m slimeflow.server`).
+
+## Bug reports
+
+Include steps to reproduce, what you expected, what happened, and your Python version and OS.

@@ -1,31 +1,61 @@
-"""Prepaid metering for AgentGuard — income rail for self-funding fleets.
+"""Prepaid metering for the AgentGuard HTTP server.
 
-Local credits now; same counters can settle via SAP x402/prepaid later.
-Set SLIMEFLOW_BILLING=0 to disable (demo / localhost).
+Built by Lauren Flipo.
+
+Local credits only: no payment provider is wired in. Keys and balances are
+kept in a JSON file (``~/.slimeflow/billing.json`` by default, mode 0600).
+The file holds key secrets in plain text, so treat it like a password file.
+
+Set SLIMEFLOW_BILLING=0 to turn metering off (demos, localhost).
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import secrets
+import tempfile
 import threading
 import time
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-# Defaults — change via env without code edits
-PRICE_REPORT_USD = float(os.environ.get("SLIMEFLOW_PRICE_REPORT", "0.001"))
-PRICE_CHECK_USD = float(os.environ.get("SLIMEFLOW_PRICE_CHECK", "0.0"))
-SEAT_MONTHLY_USD = float(os.environ.get("SLIMEFLOW_SEAT_MONTHLY", "9.0"))
-BILLING_ENABLED = os.environ.get("SLIMEFLOW_BILLING", "1") not in ("0", "false", "False")
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        value = float("nan")
+    if not math.isfinite(value) or value < 0:
+        warnings.warn(f"{name}={raw!r} is not a non-negative number; using {default}")
+        return default
+    return value
+
+
+PRICE_REPORT_USD = _env_float("SLIMEFLOW_PRICE_REPORT", 0.001)
+PRICE_CHECK_USD = _env_float("SLIMEFLOW_PRICE_CHECK", 0.0)
+SEAT_MONTHLY_USD = _env_float("SLIMEFLOW_SEAT_MONTHLY", 9.0)
+BILLING_ENABLED = os.environ.get("SLIMEFLOW_BILLING", "1").strip().lower() not in ("0", "false", "no", "off")
 STORE_PATH = Path(
     os.environ.get(
         "SLIMEFLOW_BILLING_STORE",
         str(Path.home() / ".slimeflow" / "billing.json"),
     )
 )
+
+
+def _finite_amount(value: Any) -> Optional[float]:
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    return amount if math.isfinite(amount) else None
 
 
 @dataclass
@@ -50,47 +80,76 @@ class KeyRecord:
             "reports": self.reports,
             "checks": self.checks,
             "created": self.created,
-            # full secret only returned once at create
+            # The full secret is only returned once, by create_key.
         }
 
 
 class Billing:
-    """API-key prepaid ledger."""
+    """API-key prepaid ledger.
+
+    The store file is read on first use, not at construction, so importing
+    ``slimeflow`` never touches the disk.
+    """
 
     def __init__(self, path: Path = STORE_PATH, enabled: bool = BILLING_ENABLED):
-        self.path = path
+        self.path = Path(path)
         self.enabled = enabled
         self._lock = threading.Lock()
         self._keys: Dict[str, KeyRecord] = {}  # secret -> record
-        self.treasury_usd = 0.0  # cumulative revenue (flywheel input)
-        self._load()
+        self._treasury_usd = 0.0
+        self._loaded = False
 
-    def _load(self) -> None:
+    @property
+    def treasury_usd(self) -> float:
+        """Total credits charged so far."""
+        with self._lock:
+            self._ensure_loaded()
+            return self._treasury_usd
+
+    def _ensure_loaded(self) -> None:
+        if self._loaded:
+            return
+        self._loaded = True
         if not self.path.exists():
             return
         try:
             data = json.loads(self.path.read_text())
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError) as exc:
+            warnings.warn(f"billing store {self.path} unreadable ({exc}); starting empty")
             return
-        self.treasury_usd = float(data.get("treasury_usd", 0.0))
-        for row in data.get("keys", []):
-            rec = KeyRecord(
-                key_id=row["key_id"],
-                secret=row["secret"],
-                label=row.get("label", ""),
-                balance_usd=float(row.get("balance_usd", 0)),
-                spent_usd=float(row.get("spent_usd", 0)),
-                reports=int(row.get("reports", 0)),
-                checks=int(row.get("checks", 0)),
-                created=float(row.get("created", time.time())),
-                fleet_id=row.get("fleet_id", "default"),
-            )
+        if not isinstance(data, dict):
+            warnings.warn(f"billing store {self.path} is not a JSON object; starting empty")
+            return
+        treasury = _finite_amount(data.get("treasury_usd", 0.0))
+        self._treasury_usd = treasury if treasury is not None else 0.0
+        skipped = 0
+        for row in data.get("keys", []) or []:
+            try:
+                balance = _finite_amount(row.get("balance_usd", 0))
+                spent = _finite_amount(row.get("spent_usd", 0))
+                if balance is None or spent is None:
+                    raise ValueError("non-finite amount")
+                rec = KeyRecord(
+                    key_id=str(row["key_id"]),
+                    secret=str(row["secret"]),
+                    label=str(row.get("label", "")),
+                    balance_usd=balance,
+                    spent_usd=spent,
+                    reports=int(row.get("reports", 0)),
+                    checks=int(row.get("checks", 0)),
+                    created=float(row.get("created", time.time())),
+                    fleet_id=str(row.get("fleet_id", "default")),
+                )
+            except (AttributeError, KeyError, TypeError, ValueError):
+                skipped += 1
+                continue
             self._keys[rec.secret] = rec
+        if skipped:
+            warnings.warn(f"billing store {self.path}: skipped {skipped} malformed key row(s)")
 
     def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "treasury_usd": round(self.treasury_usd, 6),
+            "treasury_usd": round(self._treasury_usd, 6),
             "price_report_usd": PRICE_REPORT_USD,
             "price_check_usd": PRICE_CHECK_USD,
             "seat_monthly_usd": SEAT_MONTHLY_USD,
@@ -109,19 +168,34 @@ class Billing:
                 for r in self._keys.values()
             ],
         }
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, indent=2))
-        tmp.replace(self.path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".billing-", dir=str(self.path.parent))
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(payload, fh, indent=2)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, self.path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     def pricing(self) -> Dict[str, Any]:
+        with self._lock:
+            self._ensure_loaded()
+            return self._pricing_locked()
+
+    def _pricing_locked(self) -> Dict[str, Any]:
         return {
             "enabled": self.enabled,
             "price_report_usd": PRICE_REPORT_USD,
             "price_check_usd": PRICE_CHECK_USD,
             "seat_monthly_usd": SEAT_MONTHLY_USD,
-            "treasury_usd": round(self.treasury_usd, 6),
+            "treasury_usd": round(self._treasury_usd, 6),
             "currency": "USD",
-            "note": "Local prepaid credits. Map topups to SAP x402/prepaid when ready.",
+            "note": "Local prepaid credits. No payment provider is connected.",
         }
 
     def create_key(
@@ -131,21 +205,26 @@ class Billing:
         fleet_id: str = "default",
         initial_usd: float = 0.0,
     ) -> Dict[str, Any]:
+        amount = _finite_amount(initial_usd)
+        if amount is None or amount < 0:
+            return {"ok": False, "error": "initial_usd_must_be_a_non_negative_number"}
         with self._lock:
+            self._ensure_loaded()
             secret = "sf_" + secrets.token_urlsafe(24)
             key_id = "key_" + secrets.token_hex(4)
             rec = KeyRecord(
                 key_id=key_id,
                 secret=secret,
-                label=label,
-                balance_usd=max(0.0, float(initial_usd)),
-                fleet_id=fleet_id,
+                label=str(label)[:200],
+                balance_usd=amount,
+                fleet_id=str(fleet_id)[:200],
             )
             self._keys[secret] = rec
             self._save()
             out = rec.to_public()
-            out["secret"] = secret  # show once
-            out["pricing"] = self.pricing()
+            out["ok"] = True
+            out["secret"] = secret  # shown once
+            out["pricing"] = self._pricing_locked()
             return out
 
     def _resolve(self, secret: Optional[str]) -> Optional[KeyRecord]:
@@ -155,19 +234,21 @@ class Billing:
 
     def balance(self, secret: str) -> Dict[str, Any]:
         with self._lock:
+            self._ensure_loaded()
             rec = self._resolve(secret)
             if not rec:
                 return {"ok": False, "error": "invalid_key"}
             out = rec.to_public()
             out["ok"] = True
-            out["pricing"] = self.pricing()
+            out["pricing"] = self._pricing_locked()
             return out
 
     def topup(self, secret: str, amount_usd: float) -> Dict[str, Any]:
-        amount = float(amount_usd)
-        if amount <= 0:
-            return {"ok": False, "error": "amount_must_be_positive"}
+        amount = _finite_amount(amount_usd)
+        if amount is None or amount <= 0:
+            return {"ok": False, "error": "amount_must_be_a_positive_number"}
         with self._lock:
+            self._ensure_loaded()
             rec = self._resolve(secret)
             if not rec:
                 return {"ok": False, "error": "invalid_key"}
@@ -184,7 +265,7 @@ class Billing:
         *,
         kind: str,
     ) -> Dict[str, Any]:
-        """Charge for an action. Returns {allowed, ...}."""
+        """Charge for one call. Returns a dict with ``allowed``."""
         if not self.enabled:
             return {
                 "allowed": True,
@@ -195,6 +276,7 @@ class Billing:
 
         price = PRICE_CHECK_USD if kind == "check" else PRICE_REPORT_USD
         with self._lock:
+            self._ensure_loaded()
             rec = self._resolve(secret)
             if not rec:
                 return {
@@ -203,7 +285,7 @@ class Billing:
                     "error": "missing_or_invalid_key",
                     "hint": "Pass header X-Slime-Key from POST /billing/create_key",
                 }
-            if rec.balance_usd < price - 1e-12:
+            if not math.isfinite(rec.balance_usd) or rec.balance_usd < price - 1e-12:
                 return {
                     "allowed": False,
                     "billing": True,
@@ -214,7 +296,7 @@ class Billing:
                 }
             rec.balance_usd -= price
             rec.spent_usd += price
-            self.treasury_usd += price
+            self._treasury_usd += price
             if kind == "check":
                 rec.checks += 1
             else:
@@ -226,7 +308,7 @@ class Billing:
                 "charged_usd": price,
                 "balance_usd": round(rec.balance_usd, 6),
                 "key_id": rec.key_id,
-                "treasury_usd": round(self.treasury_usd, 6),
+                "treasury_usd": round(self._treasury_usd, 6),
             }
 
 

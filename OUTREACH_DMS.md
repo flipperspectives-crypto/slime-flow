@@ -9,7 +9,7 @@ Hey — I open-sourced AgentGuard (Slime Flow): it quarantines real LLM/desktop 
 
 Looking for 3 design partners for 14 days free self-host. You run one live agent, share quarantine notes; I help wire `guard.check` / `guard.report`.
 
-Issue + 2-min setup: https://github.com/flipperspectives-crypto/slime-flow/issues/2
+Issue + setup: https://github.com/flipperspectives-crypto/slime-flow/issues/2
 
 Interested?
 
@@ -27,7 +27,7 @@ https://github.com/flipperspectives-crypto/slime-flow/issues/2
 
 Quick follow-up in case this got buried — I’m still looking for a few free AgentGuard design partners. One live agent and anonymizable quarantine notes are enough; setup is here: https://github.com/flipperspectives-crypto/slime-flow/issues/2
 
-No pressure if it’s not a fit. Want the 2-minute setup or should I close the loop?
+No pressure if it’s not a fit. Want the setup steps, or should I close the loop?
 
 ## Reply template if they comment on issue #2
 
@@ -41,7 +41,7 @@ For the first run, please capture only anonymized quarantine notes: what action 
 
 Hi — I’m looking for a few design partners to try AgentGuard (Slime Flow), an open-source self-host guard for LLM/desktop agents. It can quarantine unconfirmed send/delete/pay actions and secret-shaped payloads.
 
-The offer is 14 days free: run it with one live agent, share anonymized quarantine notes, and I’ll help wire setup. Details and the 2-minute start are in issue #2: https://github.com/flipperspectives-crypto/slime-flow/issues/2
+The offer is 14 days free: run it with one live agent, share anonymized quarantine notes, and I’ll help wire setup. Details and setup steps are in issue #2: https://github.com/flipperspectives-crypto/slime-flow/issues/2
 
 Interested, or is there someone else I should contact?
 

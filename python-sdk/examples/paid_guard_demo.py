@@ -1,20 +1,36 @@
 #!/usr/bin/env python3
-"""Demo: prepaid AgentGuard — pay → score → quarantine → treasury grows."""
+"""Demo: prepaid AgentGuard. Create a key, spend credits on reports, get
+quarantined.
+
+Start the server with a known admin token, then run this with the same one:
+
+    SLIMEFLOW_ADMIN_TOKEN=dev-token python -m slimeflow.server --no-state
+    SLIMEFLOW_ADMIN_TOKEN=dev-token python examples/paid_guard_demo.py
+
+Built by Lauren Flipo.
+"""
 
 from __future__ import annotations
 
 import json
+import os
+import sys
 import urllib.error
 import urllib.request
+from typing import Optional
 
-BASE = "http://127.0.0.1:8080"
+BASE = os.environ.get("SLIMEFLOW_URL", "http://127.0.0.1:8080")
+ADMIN = os.environ.get("SLIMEFLOW_ADMIN_TOKEN", "")
 
 
-def req(method: str, path: str, payload: dict | None = None, key: str = "") -> dict:
+def req(method: str, path: str, payload: Optional[dict] = None, key: str = "",
+        admin: bool = False) -> dict:
     data = None if payload is None else json.dumps(payload).encode()
     headers = {"Content-Type": "application/json"}
     if key:
         headers["X-Slime-Key"] = key
+    if admin:
+        headers["X-Slime-Admin"] = ADMIN
     r = urllib.request.Request(BASE + path, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(r, timeout=5) as resp:
@@ -29,13 +45,18 @@ def req(method: str, path: str, payload: dict | None = None, key: str = "") -> d
 
 def main() -> None:
     print("=== Paid AgentGuard demo ===\n")
+    if not ADMIN:
+        sys.exit("Set SLIMEFLOW_ADMIN_TOKEN to the token the server uses.")
     print("pricing:", req("GET", "/billing/pricing"))
 
     created = req(
         "POST",
         "/billing/create_key",
         {"label": "demo-fleet", "fleet_id": "demo", "initial_usd": 0.005},
+        admin=True,
     )
+    if "secret" not in created:
+        sys.exit(f"create_key failed: {created}")
     key = created["secret"]
     print("key:", created["key_id"], "balance=", created["balance_usd"])
 
@@ -61,10 +82,10 @@ def main() -> None:
             f"bal={bill.get('balance_usd')} err={r.get('error')}"
         )
         if r.get("error") == "insufficient_credit":
-            print("→ out of credit — top up to keep selling gate capacity")
+            print("-> out of credit")
             break
         if r.get("quarantined"):
-            print("→ rogue quarantined (product working)")
+            print("-> quarantined")
             break
 
     print("treasury:", req("GET", "/billing/treasury"))

@@ -79,4 +79,4 @@ if __name__ == "__main__":
     elif cmd == "chaos":
         inject_and_watch()
     else:
-        print(f"Usage: python basic.py [check|frame|chaos]")
+        print("Usage: python basic.py [check|frame|chaos]")
