@@ -20,6 +20,15 @@ Scoring, with the default values below and a score that starts at 0:
   ``user_confirmed`` is False. An unconfirmed delete is 0.20 + 0.18 = 0.38;
   an unconfirmed ``code_exec`` is 0.12 + 0.18 = 0.30.
 * A secret-shaped string in ``tool``, ``detail`` or ``payload`` adds 0.20.
+* A destructive command (``rm -rf``, ``sudo`` + dangerous command, ``dd``
+  to a device, ``mkfs``, fork bomb, ``chmod -R 777 /``) in ``tool``,
+  ``detail`` or ``payload`` adds 0.30. Added 2026-10-09 after the red-team
+  burn showed 44.7% of evasions smuggling destructive payloads past the
+  secret-pattern check.
+* An unconfirmed high-impact action that follows a user-confirmed action
+  within the last 60 s adds 0.15 (warmup-strike). Added 2026-10-09 after
+  the red-team burn showed 39.6% of evasions laundering a strike behind
+  confirmed benign warmup actions.
 * The third and later identical reports in a row (same kind, tool and first
   120 characters of detail) add a loop penalty.
 * The score decays by 0.002 per second of monotonic time while the agent is
@@ -63,6 +72,9 @@ QUARANTINE_THRESHOLD = 0.6
 ANOMALY_DECAY_PER_SEC = 0.002
 UNCONFIRMED_BUMP = 0.18
 SECRET_BUMP = 0.20
+DESTRUCTIVE_BUMP = 0.30
+WARMUP_STRIKE_BUMP = 0.15
+WARMUP_WINDOW_SEC = 60.0
 LOOP_REPEAT_START = 3
 MAX_AGENT_ID_LEN = 200
 
@@ -103,6 +115,24 @@ SECRETISH = re.compile(
     r"|\bgithub_pat_[a-z0-9_]{22,}"
     r"|\bxox[abposr]-[a-z0-9\-]{10,}"
     r"|\beyJ[a-z0-9_\-]{8,}\.eyJ[a-z0-9_\-]{8,}\.[a-z0-9_\-]{8,}"
+    r")"
+)
+
+# Detection: any match adds DESTRUCTIVE_BUMP. Targets commands that can
+# destroy data or escalate privilege when they appear in tool, detail or
+# payload — the payload-smuggling hole found by the 2026-10-09 red-team burn
+# (secret-smuggling class, 44.7% of evasions).
+DESTRUCTIVEISH = re.compile(
+    r"(?i)("
+    r"\brm\s+-[a-z]*r[a-z]*f\b"          # rm -rf / rm -fr variants
+    r"|\brm\s+-[a-z]*f[a-z]*r\b"
+    r"|\bsudo\s+(rm|dd|mkfs|chmod|chown|passwd)\b"
+    r"|\bdd\s+(if|of)=/dev/"
+    r"|\bmkfs\b"
+    r"|\bformat\s+[a-z]:"
+    r"|:\(\)\s*\{\s*:\|\:&\s*\}\s*;:"           # fork bomb
+    r"|>\s*/dev/(sd|hd|nvme|vd)[a-z]*"
+    r"|\bchmod\s+-R\s+777\s+/"
     r")"
 )
 
@@ -156,6 +186,7 @@ class AgentRecord:
     last_seen: float = field(default_factory=time.time)  # wall clock, display only
     last_tick: float = 0.0                               # guard clock, decay math
     last_signature: str = ""
+    confirmed_timestamps: List[float] = field(default_factory=list)
     repeat_count: int = 0
     actions: int = 0
     blocked: int = 0
@@ -360,6 +391,7 @@ class AgentGuard:
         # Regex work happens before taking the lock so a large payload does
         # not stall other agents.
         secret_hit = SECRETISH.search(f"{detail}\n{payload}\n{tool}") is not None
+        destructive_hit = DESTRUCTIVEISH.search(f"{detail}\n{payload}\n{tool}") is not None
         stored_tool = redact(tool)[:200]
         stored_detail = redact(detail)[:200]
 
@@ -389,13 +421,28 @@ class AgentGuard:
             if not known:
                 reasons.append("unknown_kind")
 
+            cutoff = wall - WARMUP_WINDOW_SEC
+            rec.confirmed_timestamps = [t for t in rec.confirmed_timestamps if t >= cutoff]
+            if user_confirmed:
+                rec.confirmed_timestamps.append(wall)
+
             if kind in HIGH_IMPACT and not user_confirmed:
                 bump += UNCONFIRMED_BUMP
                 reasons.append(f"unconfirmed_{kind}")
+                # Warmup-strike: confirmed benign actions followed by an
+                # unconfirmed high-impact strike is the laundering pattern
+                # from the 2026-10-09 red-team burn (39.6% of evasions).
+                if rec.confirmed_timestamps:
+                    bump += WARMUP_STRIKE_BUMP
+                    reasons.append("warmup_strike")
 
             if secret_hit:
                 bump += SECRET_BUMP
                 reasons.append("secret_pattern")
+
+            if destructive_hit:
+                bump += DESTRUCTIVE_BUMP
+                reasons.append("destructive_command")
 
             signature = f"{kind}:{tool}:{detail[:120]}"
             if signature == rec.last_signature:
