@@ -51,6 +51,10 @@ function init_agents!()
             idx += 1
         end
     end
+    # Fill the rest of the swarm with Harvesters, as the browser and Python sims do
+    for i in idx:N_AGENTS
+        atype_cpu[i] = 2
+    end
     copyto!(ax, ax_cpu)
     copyto!(ay, ay_cpu)
     copyto!(adir, adir_cpu)
@@ -165,12 +169,11 @@ function sim_step!()
     # Spawn rogues if requested
     if STATE.add_rogues
         atype_cpu = Array(atype)
-        ax_cpu    = Array(ax)
-        ay_cpu    = Array(ay)
+        qu_cpu    = Array(quarantined)
         # find first 12 non-rogue, non-quarantined agents and convert
         converted = 0
         for i in 1:N_AGENTS
-            if atype_cpu[i] != 5 && converted < 12
+            if atype_cpu[i] != 5 && qu_cpu[i] == 0 && converted < 12
                 atype_cpu[i] = 5
                 converted += 1
             end

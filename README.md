@@ -6,7 +6,7 @@
 ![Self-host: Free](https://img.shields.io/badge/Self--host-Free-0ea5e9)
 
 **AgentGuard stops an LLM agent before it sends, deletes, or pays without a human OK.**
-It scores every action your agent takes. Unconfirmed send/delete/pay calls, secret-shaped payloads, and repeat loops raise an anomaly score. At 0.6 the agent is quarantined until a human releases it. It runs outside the agent's prompt, so a prompt-injected or looping agent can't talk its way past it.
+Your agent's harness reports each action to the guard before running it. Unconfirmed send, delete, pay, credential, browser-auth and shell actions, secret-shaped payloads, and repeated identical calls raise an anomaly score. When the score reaches 0.6 the agent is quarantined until a human releases it. The guard is code in your harness, not text in the prompt, so the agent can't argue its way past it. It only sees what the harness reports, though, so every consequential tool call has to go through it.
 
 (Not to be confused with other projects named "AgentGuard". This one ships on PyPI as `slimeflow`.)
 
@@ -31,8 +31,35 @@ before_tool("mail-bot", "send", "gmail.send", "follow-up", user_confirmed=False)
 before_tool("mail-bot", "send", "gmail.send", "follow-up", user_confirmed=False)  # 0.8 -> quarantined, raises
 ```
 
-Action kinds: `message`, `tool`, `file_write`, `network`, `code_exec`, `browser_auth`, `send`, `delete`, `pay`, `credential`, `loop`, `ignore_stop`.
-The in-process guard keeps state in memory. For several agents or processes, run the HTTP server (`python -m slimeflow.server`, see [Option D](#option-d--agent-guard-real-rogue-llm-agents)).
+Call `before_tool` before the tool runs and only run it if no exception was raised. Reporting after the fact still freezes the agent but can't undo the action.
+
+Action kinds: `message`, `tool`, `file_write`, `network`, `code_exec`, `browser_auth`, `send`, `delete`, `pay`, `credential`, `loop`, `ignore_stop`. Any other kind scores as `tool` and is tagged `unknown_kind`; pass `AgentGuard(strict_kinds=True)` to reject unknown kinds instead.
+
+The in-process guard keeps state in memory. Pass `AgentGuard(state_path=...)` to keep quarantines across restarts. For several agents or processes, run the HTTP server (`python -m slimeflow.server`, see [Option D](#option-d--agent-guard-real-rogue-llm-agents)).
+
+### How scoring works
+
+Each report adds a base score for its kind (delete 0.20, send 0.22, pay 0.30, code_exec 0.12, tool 0.05, full table in [`agent_guard.py`](python-sdk/slimeflow/agent_guard.py)). On top of that:
+
+- unconfirmed `send`, `delete`, `pay`, `credential`, `browser_auth`, `code_exec`: +0.18
+- a secret-shaped string in `tool`, `detail` or `payload` (API keys, bearer tokens, private-key headers, AWS/GitHub/Slack tokens, JWTs, or words like "password"): +0.20
+- the third and later identical calls in a row: +0.15 or more
+
+The score drops by 0.002 per second while the agent is active. It does not drop while the agent is quarantined.
+
+What that means with the defaults, starting from 0:
+
+- The first unconfirmed delete goes through (0.38). A second unconfirmed delete 80 seconds or less later is blocked and the agent stays frozen until a human calls `release()`.
+- Unconfirmed shell commands (`code_exec`) score 0.30 each. Two in a row are allowed (0.60 minus decay, e.g. 0.598 one second apart). The third freezes the agent if the first and third are 150 seconds or less apart (75 seconds per gap when evenly spaced). If the two commands land on the same clock reading the score is exactly 0.60 and the second one freezes; this only happens on coarse clocks such as Windows with Python older than 3.13.
+- An unconfirmed send that carries a secret-shaped payload scores 0.60 on its own and freezes the agent on the first call.
+- After `release()` the score is capped at 0.24, so one more unconfirmed delete right away freezes the agent again.
+
+What it does not do:
+
+- It doesn't see actions the harness doesn't report.
+- It trusts the harness for `kind` and `user_confirmed`. If the agent can set those itself, it can understate its risk.
+- It doesn't count money. A `pay` scores the same for $1 or $1M.
+- Any code in the same process can call `guard.release()`. If the agent can run Python in your harness process, run the guard as a separate HTTP server instead.
 
 **Design partners wanted:** run it in front of one real agent for 14 days, share anonymized quarantine logs, and get free setup help. Reply on [issue #2](https://github.com/flipperspectives-crypto/slime-flow/issues/2).
 
@@ -67,9 +94,9 @@ Three layers:
 |---|---|
 | **Slime Flow** | Living pheromone trails that grow, pulse, and reroute with no central controller |
 | **Sentinel** | Protective membrane monitoring swarm survivability, flow stability, and egress capacity in real time |
-| **Veilpiercer** | Rogue agent detection, behavioral anomaly scoring, data leak monitoring, and quarantine |
+| **Veilpiercer** | Rogue agent detection, behavioral anomaly scoring, and quarantine |
 
-No cloud dependency. No central server. Runs fully offline on edge hardware.
+No cloud dependency. Runs offline on one machine.
 
 ---
 
@@ -82,7 +109,7 @@ Open `slimeflow_standalone.html` directly in any browser.
 | Button | Action |
 |---|---|
 | `👁 VEIL ON/OFF` | Toggle rogue detection — turn it off and watch chaos spread |
-| `☠ ROGUES` | Spawn 8–16 rogue agents near existing clusters to blend in |
+| `☠ ROGUES` | Turn up to 12 active agents into rogues |
 | `⚡ FAULT` | Inject a kill zone — Guardians are immune, others reroute |
 | `↺ RESET` | Full reset |
 | Click canvas | Drop a pheromone burst anywhere |
@@ -120,7 +147,7 @@ See [python-sdk/README.md](python-sdk/README.md) for full API docs. Async + nump
 | Agent | Count | Behavior |
 |---|---|---|
 | 🔵 **Scout** | 80 | Fast, exploratory, weak pheromone sensing — often ignores trails |
-| 🟢 **Harvester** | 200 | Slow, heavy deposit — classic slime mold pathfinding |
+| 🟢 **Harvester** | 292 | Slow, heavy deposit — classic slime mold pathfinding (200 plus the 92 that fill the swarm to 512) |
 | 🟡 **Guardian** | 60 | Patrols boundaries, survives fault zones |
 | 🟠 **Emergent** | 80 | Adaptive speed and deposit, responds to flow pressure |
 | 🟣 **Rogue** | 0 (spawned) | Chaotic movement, invisible pheromone signature, builds anomaly score |
@@ -164,13 +191,15 @@ ay = CUDA.rand(Float32, N_AGENTS) .* H
 
 ### Option D — Agent guard (real rogue LLM agents)
 
-Same Veilpiercer threshold (0.6), but for live agents — not the pheromone sim.
+Same 0.6 threshold as the sim's Veilpiercer, applied to live agents.
 
 ```bash
 pip install slimeflow
-python -m slimeflow.server --host 127.0.0.1 --port 8080
+SLIMEFLOW_BILLING=0 python -m slimeflow.server --host 127.0.0.1 --port 8080
 python python-sdk/examples/rogue_agent_demo.py
 ```
+
+Billing is on by default, which means `/agents/report` and `/agents/{id}/check` need an `X-Slime-Key` header; `SLIMEFLOW_BILLING=0` turns that off. See [MONETIZE.md](MONETIZE.md) for keys.
 
 In-process gate before high-impact tools:
 
@@ -193,6 +222,10 @@ result = guard.report(
 HTTP: `GET /agents`, `POST /agents/report`, `GET /agents/{id}/check`,
 `POST /agents/{id}/release`, `POST /agents/{id}/quarantine`.
 
+`release`, `quarantine`, `/billing/create_key` and `/billing/topup` need the header `X-Slime-Admin: <token>`. Set the token with `SLIMEFLOW_ADMIN_TOKEN`; if you don't, the server generates one and prints it at startup. Keep the token away from the agent, or the agent can release itself.
+
+`user_confirmed` must be a JSON boolean. The server keeps quarantines in `~/.slimeflow/guard_state.json` (change with `--state`, turn off with `--no-state`), so a restart doesn't unfreeze anyone. It binds to 127.0.0.1 by default. Guard and billing endpoints send no CORS headers, so other web pages can't read them.
+
 ## Roadmap
 
 - [x] GPU pheromone simulation (Julia + CUDA)
@@ -214,7 +247,7 @@ HTTP: `GET /agents`, `POST /agents/report`, `GET /agents/{id}/check`,
 - **Autonomous vehicles** — organic rerouting without cloud map updates
 - **Drone swarms** — mission continues when agents are lost
 - **Warehouse robots** — no central scheduler, bottlenecks dissolve automatically
-- **AI agent networks** — Veilpiercer catches prompt injection and rogue behavior
+- **AI agent networks** — AgentGuard flags unconfirmed high-impact actions, secret-shaped payloads, and loops
 - **Critical infrastructure** — decentralized mesh with no single point of failure
 
 ---
@@ -231,7 +264,7 @@ No telemetry. No cloud dependency. No surveillance.
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT terms with the Commons Clause condition, which bars selling the software or a service built mainly on it. See [LICENSE](LICENSE).
 
 ---
 

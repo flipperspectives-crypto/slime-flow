@@ -81,6 +81,6 @@ if __name__ == "__main__":
         elif cmd == "chaos":
             asyncio.run(chaos_test())
         else:
-            print(f"Usage: python async_example.py [monitor|chaos]")
+            print("Usage: python async_example.py [monitor|chaos]")
     except KeyboardInterrupt:
         print("\nInterrupted.")

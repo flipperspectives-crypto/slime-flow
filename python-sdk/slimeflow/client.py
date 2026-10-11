@@ -1,4 +1,4 @@
-"""Slime Flow HTTP client — connects to the Julia GPU simulation server."""
+"""Slime Flow sim client. Talks to server.jl (GPU) or slimeflow.server (CPU)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import time
 import urllib.request
 import urllib.error
-from typing import Optional, Iterator, AsyncIterator, Callable, Awaitable, Dict, Any, Union
+from typing import Any, AsyncIterator, Callable, Iterator, Optional
 
 from slimeflow.models import Frame, Status
 
@@ -27,7 +27,7 @@ class ServerError(SlimeFlowError):
 
 
 class SlimeFlow:
-    """Client for the Slime Flow GPU simulation server.
+    """Client for the Slime Flow simulation server.
 
     Args:
         host: Server hostname (default: localhost)

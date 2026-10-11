@@ -206,7 +206,6 @@ class Frame:
         Returns dict with keys: x, y, type, anomaly, quarantine — each a 1D array.
         """
         import numpy as np
-        n = len(self.agents)
         return {
             "x": np.array([a.x for a in self.agents], dtype=np.float32),
             "y": np.array([a.y for a in self.agents], dtype=np.float32),

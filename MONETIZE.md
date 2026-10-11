@@ -16,7 +16,7 @@ Disable metering: `SLIMEFLOW_BILLING=0`.
 
 ## Flywheel
 
-1. Customer tops up a key (`POST /billing/topup`) or buys a seat.
+1. The operator tops up a customer's key (`POST /billing/topup`, admin token required) or sells a seat.
 2. Agents call `/agents/report` with `X-Slime-Key` → credits move to **treasury**.
 3. Treasury funds compute / SAP prepaid / the next agent.
 4. Rule: **one agent profitable 7 days** before spawning the next.
@@ -26,12 +26,13 @@ Disable metering: `SLIMEFLOW_BILLING=0`.
 
 ```bash
 pip install -e python-sdk/
-python -m slimeflow.server --host 127.0.0.1 --port 8080
+SLIMEFLOW_ADMIN_TOKEN=change-me python -m slimeflow.server --host 127.0.0.1 --port 8080
 
-# create key + $1 credit
+# create key + $1 credit (admin only)
 curl -s -X POST http://127.0.0.1:8080/billing/create_key \
   -H 'Content-Type: application/json' \
-  -d '{"label":"fleet-a","initial_usd":1}' 
+  -H 'X-Slime-Admin: change-me' \
+  -d '{"label":"fleet-a","initial_usd":1}'
 
 # report with key
 curl -s -X POST http://127.0.0.1:8080/agents/report \
@@ -40,7 +41,9 @@ curl -s -X POST http://127.0.0.1:8080/agents/report \
   -d '{"agent_id":"bot-1","kind":"send","tool":"gmail.send","user_confirmed":false}'
 ```
 
-Or: `python python-sdk/examples/paid_guard_demo.py`
+Or: `SLIMEFLOW_ADMIN_TOKEN=change-me python python-sdk/examples/paid_guard_demo.py`
+
+Credits are local numbers in `~/.slimeflow/billing.json` (mode 0600, holds key secrets in plain text). No payment provider is connected yet.
 
 ## Zero capital bootstrap
 
