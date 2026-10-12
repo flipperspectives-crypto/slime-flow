@@ -88,7 +88,8 @@ def test_frozen_until_release_no_matter_how_long():
     unconfirmed(g, "a", "delete", 2)
     for _ in range(3):
         clock.advance(86_400)
-        assert g.check("a")["allowed"] is False
+        r = g.check("a")
+        assert r["allowed"] is False
         assert g.report("a", "message", user_confirmed=True)["allowed"] is False
     released = g.release("a", by="lauren")
     assert released["released"] is True

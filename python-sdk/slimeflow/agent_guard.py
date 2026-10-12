@@ -61,12 +61,16 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 from collections import OrderedDict
 
+MAX_QUARANTINED_AGENTS = 10_000
+QUARANTINE_TTL_SECONDS = 86400.0
 QUARANTINE_THRESHOLD = 0.6
 ANOMALY_DECAY_PER_SEC = 0.002
 UNCONFIRMED_BUMP = 0.18
 SECRET_BUMP = 0.20
 LOOP_REPEAT_START = 3
 MAX_AGENT_ID_LEN = 200
+MAX_QUARANTINED_AGENTS = 10_000
+QUARANTINE_TTL_SECONDS = 86400.0
 
 # Scores are compared after rounding to this many decimal places, so float
 # error never decides whether an agent is frozen. Example: three unconfirmed
@@ -164,7 +168,9 @@ class AgentRecord:
     blocked: int = 0
     history: List[Dict[str, Any]] = field(default_factory=list)
 
-    def to_dict(self, now: float) -> Dict[str, Any]:
+    def to_dict(self, now: float | None = None) -> Dict[str, Any]:
+        if now is None:
+            now = time.time()
         return {
             "agent_id": self.agent_id,
             "anomaly": round(self.anomaly, 4),
@@ -236,7 +242,12 @@ class AgentGuard:
                     raise ValueError(f"cannot read guard state file {path}: {exc}") from exc
                 now = self._clock()
                 wall = time.time()
+                dropped = False
                 for agent_id, row in rows.items():
+                    last_seen = float(row.get("last_seen", wall))
+                    if wall - last_seen > QUARANTINE_TTL_SECONDS:
+                        dropped = True
+                        continue
                     rec = self._get(_validate_agent_id(agent_id), now, wall)
                     rec.quarantined = True
                     rec.quarantine_reason = str(row.get("reason", "restored"))
@@ -246,7 +257,8 @@ class AgentGuard:
                     rec.last_seen = wall
                     loaded += 1
             self._state_path = path
-            self._save_locked()
+            if loaded > 0 or (path.exists() and "dropped" in locals() and dropped):
+                self._save_locked()
         return loaded
 
     def _save_locked(self) -> None:
@@ -282,21 +294,33 @@ class AgentGuard:
     # ─── internals ────────────────────────────────────────────────────────
 
     def _evict_agents(self, wall: float) -> None:
-        """Evict agents idle for >24h, and cap total size to 10000 using LRU order."""
-        if len(self._agents) <= 10000 and wall - getattr(self, '_last_evict_time', 0.0) < 300.0:
+        if len(self._agents) <= 10000 + MAX_QUARANTINED_AGENTS and wall - getattr(self, '_last_evict_time', 0.0) < 300.0:
             return
         self._last_evict_time = wall
 
-        # Evict >24h idle
         expired = []
-        for aid, rec in self._agents.items():
-            if wall - rec.last_seen > 86400.0:
-                if not rec.quarantined:
-                    expired.append(aid)
-            else:
-                break
+        quarantined_expired = False
+        for aid, rec in list(self._agents.items()):
+            if wall - rec.last_seen > (QUARANTINE_TTL_SECONDS if rec.quarantined else 86400.0):
+                expired.append(aid)
+                if rec.quarantined:
+                    quarantined_expired = True
+
         for aid in expired:
-            del self._agents[aid]
+            if aid in self._agents:
+                del self._agents[aid]
+
+        if quarantined_expired:
+            self._save_locked()
+
+        quarantined_agents = [aid for aid, rec in self._agents.items() if rec.quarantined]
+        if len(quarantined_agents) > MAX_QUARANTINED_AGENTS:
+            to_remove = quarantined_agents[:len(quarantined_agents) - MAX_QUARANTINED_AGENTS]
+            for aid in to_remove:
+                if aid in self._agents:
+                    del self._agents[aid]
+            if to_remove:
+                self._save_locked()
 
     def _get(self, agent_id: str, now: float, wall: float) -> AgentRecord:
         self._evict_agents(wall)
@@ -305,16 +329,18 @@ class AgentGuard:
             rec = AgentRecord(agent_id=agent_id, last_tick=now)
             self._agents[agent_id] = rec
         self._agents.move_to_end(agent_id)
-        # Cap at 10000
-        if len(self._agents) > 10000:
+
+        non_quarantined = [aid for aid, r in self._agents.items() if not r.quarantined]
+        if len(non_quarantined) > 10000:
+            total = len(non_quarantined)
             to_remove = []
-            for aid, r in self._agents.items():
-                if len(self._agents) - len(to_remove) <= 10000:
+            for aid in non_quarantined:
+                if total - len(to_remove) <= 10000:
                     break
-                if not r.quarantined:
-                    to_remove.append(aid)
+                to_remove.append(aid)
             for aid in to_remove:
-                del self._agents[aid]
+                if aid in self._agents:
+                    del self._agents[aid]
         return rec
 
     def _decay(self, rec: AgentRecord, now: float) -> None:
@@ -350,7 +376,7 @@ class AgentGuard:
             rec = self._agents.get(agent_id)
             if rec is not None:
                 self._agents.move_to_end(agent_id)
-                rec.last_seen = wall
+                rec.last_seen = time.time()
             if rec is None:
                 return {
                     "allowed": True,
@@ -492,7 +518,7 @@ class AgentGuard:
             rec = self._agents.get(agent_id)
             if rec is not None:
                 self._agents.move_to_end(agent_id)
-                rec.last_seen = wall
+                rec.last_seen = time.time()
             if rec is None:
                 return {
                     "allowed": True,

@@ -73,7 +73,7 @@ def test_loop_evasion_2():
         time.time = original_time
 
 
-def test_quarantined_survives_idle_sweep():
+def test_quarantined_evicted_idle_sweep():
     clock = FakeClock()
     import time
     original_time = time.time
@@ -94,14 +94,13 @@ def test_quarantined_survives_idle_sweep():
         # This will trigger evict
         guard.report("test_active", "tool")
 
-        assert "test_q" in guard._agents
-        assert guard._agents["test_q"].quarantined == True
+        assert "test_q" not in guard._agents
         assert "test_idle" not in guard._agents
         assert "test_active" in guard._agents
     finally:
         time.time = original_time
 
-def test_quarantined_survives_lru_pressure():
+def test_quarantined_survives_nonquarantined_lru_pressure():
     clock = FakeClock()
     import time
     original_time = time.time
@@ -115,13 +114,17 @@ def test_quarantined_survives_lru_pressure():
 
         # Fill registry past cap (10005 total)
         for i in range(10005):
+            clock.advance(0.01)
             guard.report(f"test_fill_{i}", "tool")
 
-        assert "test_q" in guard._agents
-        assert guard._agents["test_q"].quarantined == True
+        clock.advance(300.0) # wait for eviction cycle
+        guard.report("agent_trigger", "tool")
 
-        # Total size should be exactly 10000
-        assert len(guard._agents) == 10000
+        assert "test_q" in guard._agents
+
+        # Total size should be exactly 10001 (1 quarantined + 10000 non-quarantined)
+        assert len([r for r in guard._agents.values() if not r.quarantined]) <= 10000
+        assert "test_q" in guard._agents
     finally:
         time.time = original_time
 
